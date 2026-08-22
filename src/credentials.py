@@ -27,7 +27,7 @@ def _from_keyring(username: str) -> str | None:
     try:
         return keyring.get_password(SERVICE, username)
     except Exception as e:    # noqa: BLE001 —— keyring 后端五花八门，抛什么全看装了哪个
-        # Linux 无桌面环境时后端可能不可用，不该因此崩掉
+        # Linux 无桌面环境时密钥链后端可能不可用，不应因此中断程序。
         log.debug("读取密钥链失败，跳过: %s", e)
         return None
 

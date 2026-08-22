@@ -43,7 +43,7 @@ ABSENT_ROUNDS_TO_CONFIRM = 1
 # 于是新学期第一门成绩被撤回时没有通知、快照还留着原分数，之后原样重发也
 # 认不出来——而那恰好是你最盯着看的那几天。
 #
-# 现在照样累计缺席次数，只是要多等一轮再确认。批量消失仍由 max_withdrawals
+# 现在仍会累计缺失次数，但会多等待一轮再确认。批量消失仍由 max_withdrawals
 # 兜住：≥3 门同时消失判页面异常，不推送也不落盘。
 TERM_GONE_ROUNDS_TO_CONFIRM = 2
 
@@ -152,7 +152,7 @@ class GradeStore:
         return data
 
     def _foreign_reason(self, data: dict) -> str | None:
-        """这份快照是不是别人的。是的话返回原因。
+        """检查快照是否属于其他账号；如果是，则返回原因。
 
         两种情况：
         - 换了适配器。先用 mock 自测再切真实教务系统，快照文件还在但内容
@@ -237,7 +237,7 @@ def _vanished(old: dict[str, Grade], new: list[Grade]):
     一道前置闸：已经确认撤回过的不再重复计数，否则每轮都会重推一次。
 
     "整个学期没出现"以前是直接不算撤回。那条规则挡住了页面残缺，却也挡住了
-    真实情况：某学期只有一门课时，两者在数据上完全一样。现在改成照样计数、
+    当某学期只有一门课时，两种情况在数据上完全相同。现在统一计数，
     但要求更多确认轮数，由调用方去查 _rounds_needed()。
     """
     present = {g.key for g in new}

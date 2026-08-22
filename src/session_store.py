@@ -103,7 +103,7 @@ class SessionStore:
                 continue
             expires = row.get("expires")
             if isinstance(expires, (int, float)) and expires < now:
-                continue          # 已经过期的别装回去
+                continue          # 不恢复已经过期的 Cookie
             try:
                 session.cookies.set_cookie(requests.cookies.create_cookie(
                     name=str(row["name"]), value=str(row.get("value") or ""),
@@ -129,7 +129,7 @@ def _preserve_owner(target: Path, temporary: Path) -> None:
 
     服务以 jwgrade 跑，诊断脚本以 root 跑。root 写完之后文件变成 root 所有，
     服务用户再也写不进去——而写失败是 fail-closed 的，监控会直接停机。
-    一个排错动作把监控搞停，这代价太蠢了。
+    状态查看操作不应导致监控停止。
 
     文件还不存在时（比如 root 第一次跑诊断就把它创建出来）就跟着所在目录的
     属主走，那个目录本来就是服务用户的。
@@ -146,4 +146,4 @@ def _preserve_owner(target: Path, temporary: Path) -> None:
     try:
         os.chown(temporary, st.st_uid, st.st_gid)
     except (OSError, AttributeError):
-        pass                       # 非 root 时改不了别人的属主，忽略
+        pass                       # 非 root 用户可能无法修改文件所有者，可安全忽略

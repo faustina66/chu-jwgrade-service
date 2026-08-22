@@ -63,7 +63,7 @@ def demo_grade() -> Grade:
     """--demo 用的假成绩。**字段要和真实抓到的一模一样**，缺一格 demo 就
     和线上长得不一样了——2026-08-19 就漏过 `课程序号`，推出来少一行。
 
-    分数一律满分，不放真实成绩：这条消息会被截图、会贴给别人看。
+    样例统一使用满分，不包含真实成绩，便于截图或分享。
 
     kind 固定用 new 而不是 filled：长安大学的成绩是整行出现、整行消失的，
     不存在「课程行早就在、分数栏后来才填上」那个中间状态，filled 在这儿
@@ -82,7 +82,7 @@ def demo_grade() -> Grade:
 
 def _setup_logging(config_path: str = "config.yaml") -> None:
     # 日志跟着配置文件走，不跟当前工作目录走。状态文件早就是这个规矩了
-    # （见 config._anchor_storage_paths）；日志要是按 cwd 解析，从别的目录
+    # （见 config._anchor_storage_paths）；如果日志路径按 cwd 解析，从其他目录
     # 手工跑一次命令就会在那边另建一份 data/run.log，日志散成好几份，
     # 排查时看的和程序写的不是同一个文件。
     #
@@ -124,9 +124,9 @@ def _in_quiet_hours(window) -> bool:
 
 
 # 存活计时器。装在模块级而不是层层传参：每一条成功送达的通知都该把它归零，
-# 而推送出口散落在 check_once、发件箱补发、失败告警、--report 好几处。
-# 之前只有"本轮有成绩变化"和"心跳自己"会归零，于是出现过发件箱刚补发一条
-# 成绩通知、紧接着又推一条"监控正常"的场面。
+# 推送入口分布在 check_once、发件箱补发、失败告警和 --report 等位置。
+# 旧逻辑只在检测到成绩变化或发送心跳时重置计时，可能导致发件箱刚补发成绩通知，
+# 随后又立即发送一条「监控正常」。
 _heartbeat = None
 
 
@@ -134,18 +134,17 @@ def _push(notifiers: list, title: str, body: str) -> bool:
     """返回是否全部送达。调用方靠它决定要不要推进快照。"""
     if not notifiers:
         log.warning("没有启用任何推送通道，通知内容只写进日志：%s%s", chr(10), body)
-        return True          # 没通道就没什么可重试的，别把快照永远卡住
+        return True          # 没有推送通道时无需重试，避免阻止快照更新
 
     def one(n) -> bool:
-        # 一个通道抛异常不该带崩整轮：它会一路窜到 check_once 外面，
-        # 让本来已经检出的变化连发件箱都进不去。
+        # 单个通道异常不应中断整轮任务，否则已经检测到的变化无法进入发件箱。
         try:
             return n.send(title, body)
         except Exception as e:
             log.exception("[%s] 推送时抛异常：%s", getattr(n, "name", "?"), e)
             return False
 
-    # 列表推导是有意的，别改成生成器：all() 会短路，那样第一个通道失败之后
+    # 此处有意使用列表推导而不是生成器：all() 会短路，否则第一个通道失败后
     # 后面的通道根本不会被调用。
     ok = all([one(n) for n in notifiers])    # noqa: C419
     if ok and _heartbeat is not None:
@@ -255,7 +254,7 @@ def check_once(adapter, store: GradeStore, notifiers: list,
 
     changes = diff(old, grades, confirm_rounds)
 
-    # 一次撤回一堆课，现实中几乎不可能，多半是教务处返回了残缺页面。
+    # 一次撤回大量课程通常表示教务系统返回了不完整页面。
     # 这里必须赶在 save 之前拦下：一旦写进快照，等页面恢复正常就会被
     # 当成"批量出分"再全推一遍。
     withdrawals = [c for c in changes if c.is_withdrawal]
@@ -383,7 +382,7 @@ def _run() -> int:
     storage = cfg.get("storage", {})
 
     # --interval 在 _load_schedule 里是直接改字段的，配置那道下限校验管不到它。
-    # 不在这儿拦的话，`--interval 30` 就是每分钟打一次学校，而唯一的兜底是
+    # 如果不在此处校验，`--interval 30` 会造成每分钟一次请求，而后续保护只有
     # next_delay() 里的 max(60, ...)。两条路共用 config.interval_problem。
     if args.interval:
         too_dense = config.interval_problem(
@@ -529,10 +528,10 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
 
     acct = dict(cfg["account"])
     acct["debug_dump"] = args.dump
-    # 适配器自己要落盘的东西（--dump 的原始页面、mock 的样例数据）都放这儿，
-    # 不按当前工作目录解析。dump 里有姓名、学号和全部成绩，落点必须是确定的：
-    # 否则从别处手工跑一次，这份东西就悄悄留在那个目录，你既不知道它在哪，
-    # 也不会想起来删；mock 那个更直接，会在你所在的任意目录 mkdir 出一个 data/。
+    # 适配器需要写入的内容（--dump 的原始页面、mock 的样例数据）统一保存在状态目录，
+    # 不根据当前工作目录解析。dump 包含姓名、学号和全部成绩，保存位置必须明确：
+    # 否则从其他目录手动运行时，文件会保存在不可预期的位置，既难以查找，
+    # 也容易被遗漏；mock 还可能在任意工作目录中创建 data/。
     acct["state_dir"] = str(
         Path(storage.get("snapshot_path") or "data/grades.json").parent)
     auth_required = acct.get("adapter") != "mock"
@@ -565,7 +564,7 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
     sessions = SessionStore(storage.get("session_path") or "data/session.json",
                             username)
     # 用 getattr 而不是直接取：适配器不一定基于 requests.Session
-    # （将来换个学校可能是别的实现），会话落盘只是优化，不该成为硬要求。
+    # （未来适配其他学校时可能使用不同实现），会话持久化属于优化，不应成为强制要求。
     adapter_session = getattr(adapter, "session", None)
     if auth_required and adapter_session is not None:
         restored = sessions.restore(adapter_session)
@@ -596,7 +595,7 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
 
     def _before_ticket() -> None:
         # 每一轮认证都从换票探测开始，所以小时爆发闸挂在这儿，一轮记一次。
-        # 记账在请求发出之前：换票失败照样是一次打到认证服务器的请求，
+        # 在请求发出前记账：即使换票失败，也已经向认证服务器发送了一次请求，
         # 只在成功时记会漏掉恰恰最该数的那些。
         rate.check_attempt()
         rate.note(TICKET)
@@ -608,7 +607,7 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
 
     def _before_password() -> None:
         # 真的要把密码发出去了才记账。放在请求之前而不是之后：
-        # 进程崩在半路时，那次尝试对认证服务器来说已经发生了。
+        # 即使进程在请求途中异常退出，认证服务器也可能已经收到该次请求。
         block.arm(acct["password"])
         rate.note(PASSWORD)
 
@@ -702,7 +701,7 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
         except LoginFailed as e:
             # 密码错误或账号锁定时继续重试没有意义，直接告警退出以保护账号。
             # 退出码必须是 EXIT_LOGIN_FAILED：systemd 的 RestartPreventExitStatus
-            # 认的就是它，返回 1 的话服务照样被拉起来重试，等于没防。
+            # systemd 根据该退出码停止自动重试；若返回 1，保护机制将无法生效。
             log.error("登录失败，停止运行：%s", e)
             safe_reason = _persist_login_failure(
                 block, auth_required, acct.get("password", ""), str(e), notifiers,
@@ -767,7 +766,7 @@ def _maybe_reload(args, scheduler: AdaptiveScheduler, mtime: float) -> float:
     try:
         sched = _load_schedule(config.load(args.config), args.interval)
     except Exception as e:    # noqa: BLE001 —— 配置怎么写坏的都不该让监控停摆
-        # 多半是编辑到一半，YAML 还不完整。沿用旧配置，并记下这个 mtime——
+        # 这通常表示文件仍在编辑、YAML 尚不完整。继续使用旧配置，并记录该 mtime，
         # 不是"下轮再试"：那样会每一轮都重新解析同一份坏文件、刷一遍同样的
         # 警告。你把它改对时 mtime 会再变一次，那时自然会重新加载。
         log.warning("配置重载失败，继续使用原配置：%s", e)

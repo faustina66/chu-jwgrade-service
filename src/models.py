@@ -1,4 +1,4 @@
-"""成绩数据结构。各教务系统字段名千差万别，统一收敛到这里。"""
+"""成绩数据结构。不同教务系统的字段统一转换为这里定义的格式。"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -81,7 +81,7 @@ class Grade:
 
     @property
     def key(self) -> str:
-        """课程唯一标识。少数系统不给课程代码，退化用课程名兜底。"""
+        """课程唯一标识。少数系统不提供课程代码，此时使用课程名称。"""
         return _grade_key(self.term, self.course_id, self.course_name)
 
     @property

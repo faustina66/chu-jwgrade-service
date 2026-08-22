@@ -26,9 +26,9 @@ body:
     attributes:
       label: 确认
       options:
-        - label: 我已经检查过下面要贴的内容，里面没有学号、姓名、真实成绩、密码、Cookie 或 token
+        - label: 我已确认下方内容不包含学号、姓名、真实成绩、密码、Cookie 或 token
           required: true
-        - label: 我看过 `docs/deployment.md` 和 `docs/operations.md`，那里面没有解决这个问题
+        - label: 我已阅读 `docs/deployment.md` 和 `docs/operations.md`，但未找到解决方法
           required: true
 
   - type: textarea
@@ -37,7 +37,7 @@ body:
       label: 出了什么问题
       description: 你做了什么、期望看到什么、实际看到了什么。
       placeholder: |
-        做了：跑 bash deploy/setup.sh
+        执行：bash deploy/setup.sh
         期望：装完并启动服务
         实际：部署检查未通过，退出码 20
     validations:
@@ -85,6 +85,6 @@ body:
         **关于「学校改版了，程序解析不出成绩」这类问题**：
 
         原始 HTML 对排查确实最有用，但那份文件里有你的姓名、学号和**全部成绩**，
-        **不要直接贴上来**。请只描述表格结构变了什么（比如「多了一列学分绩点」、
+        **请勿直接粘贴原始页面。** 只需描述表格结构的变化（例如「增加了一列学分绩点」、
         「学期那一列的写法从 2025-2026-1 变成了 2025 秋」），
         或提供一行**已将所有内容替换为虚构数据**的示例。

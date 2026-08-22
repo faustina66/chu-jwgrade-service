@@ -4,10 +4,10 @@ contact_links:
     url: https://github.com/faustina66/chu-jwgrade-service/security/advisories/new
     about: 不要开公开 Issue。走 GitHub 的私密安全报告渠道，只有仓库维护者能看到。
 
-  - name: 📖 先看部署指南
+  - name: 📖 新用户配置指南
     url: https://github.com/faustina66/chu-jwgrade-service/blob/main/docs/deployment.md
-    about: 装不上、脚本报错、退出码 20/21 —— 指南里都写了怎么办。
+    about: 部署失败、脚本报错或出现退出码 20/21 时，请先查看这里的处理方法。
 
-  - name: 🔧 先看运维手册
+  - name: 🔧 日常使用与维护
     url: https://github.com/faustina66/chu-jwgrade-service/blob/main/docs/operations.md
-    about: 改频率、改教务密码、停服务、换服务器、什么时候才真要重启。
+    about: 查看调整频率、更新教务密码、停止服务、迁移服务器和重启服务的方法。

@@ -336,7 +336,7 @@ def _validate(cfg: dict, require_push: bool = True) -> None:
     # 相等是允许的（那只是把某一档关掉），只拦真正颠倒的。
     #
     # 只在 adaptive 开着时查：关掉时另外两档根本不参与计算，为用不上的字段
-    # 拦人是无谓的。真把 adaptive 打开，那一次重新校验照样拦得住。
+    # 此时无需阻止启动；重新启用 adaptive 时会再次执行校验。
     #
     # 缺的键按默认值补齐再比——只改了 interval_seconds 的配置同样可能是反的
     # （加速 900 / 常规 300），而那恰恰是最自然的改法。
@@ -387,7 +387,7 @@ def _validate(cfg: dict, require_push: bool = True) -> None:
     safety = cfg.get("safety") or {}
     check_int("safety.max_withdrawals", safety.get("max_withdrawals"))
     # 一小时最多登录几次。2026-08-16 账号因「频繁登录」被冻结过一次，
-    # 这道闸是那之后加的，别把它调得太松。
+    # 该限制用于避免认证请求过于频繁，不应设置得过于宽松。
     check_int("safety.max_logins_per_hour", safety.get("max_logins_per_hour"))
     check_int("safety.max_password_logins_per_day",
               safety.get("max_password_logins_per_day"))

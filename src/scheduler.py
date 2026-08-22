@@ -1,6 +1,6 @@
 """轮询节奏。
 
-出分是高度集中的：期末后那几天教务处一批一批地发，平时几个月纹丝不动。
+成绩通常集中发布：期末后的几天可能分批更新，平时则可能数月没有变化。
 固定间隔难以同时兼顾请求数量和通知时效，因此采用三档自适应频率。
 
 使用三个离散档位而不是连续调节，便于直接判断当前档位及其切换原因。
@@ -88,6 +88,6 @@ class AdaptiveScheduler:
     def next_delay(self) -> tuple[int, str]:
         """返回 (等待秒数, 档位说明)。抖动是为了不打出固定节奏。"""
         base = self.base_interval()
-        jitter = min(self.cfg.jitter, base // 3)   # 抖动别超过基数的 1/3
+        jitter = min(self.cfg.jitter, base // 3)   # 抖动不超过基础间隔的 1/3
         delay = base + random.randint(-jitter, jitter) if jitter > 0 else base
         return max(60, delay), LABEL[self.mode]
