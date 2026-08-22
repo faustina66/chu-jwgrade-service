@@ -177,12 +177,6 @@ bash tools/test_push.sh
 
 这条测试消息只调用 PushPlus，不访问教务系统，也不会触发教务系统登录。它只发送一条样例成绩，收到微信消息就说明推送通道和页面显示基本正常。
 
-脚本还会生成一份 HTML 预览：
-
-```text
-/opt/jwgrade/data/push-preview.html
-```
-
 如果 PushPlus 测试失败，先看终端中的错误提示和 PushPlus 后台发送记录，不要反复重启成绩监控服务。
 
 ## 部署完成后
