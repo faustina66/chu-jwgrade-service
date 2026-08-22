@@ -61,17 +61,17 @@ ssh root@服务器IP
 
 ## 第二步：下载项目
 
-把命令里的仓库地址换成实际的 GitHub 地址：
+直接复制粘贴，四条命令一起跑：
 
 ```bash
 apt-get update
 apt-get install -y git
 mkdir -p /opt
-git clone https://github.com/你的用户名/你的仓库.git /opt/jwgrade
+git clone https://github.com/faustina66/chu-jwgrade-service.git /opt/jwgrade
 cd /opt/jwgrade
 ```
 
-如果 `git clone` 提示仓库不存在或没有权限，先确认仓库地址正确，并确认仓库已经公开。
+如果 `git clone` 卡住或超时，多半是服务器访问 GitHub 不畅——国内机器常见。可以稍后重试，或走文末的备用方案。
 
 > **路径必须在 `/opt` 下面，不能放 `/home` 或 `/root`。**
 > systemd 服务单元开了 `ProtectHome=true`，`/home`、`/root`、`/run/user`
