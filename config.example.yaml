@@ -1,0 +1,105 @@
+# 复制为 config.yaml 后填写。云服务器部署脚本会设为 root:jwgrade + 640。
+account:
+  adapter: chd                 # chd = 长安大学本科教务；mock = 本地假数据，用于自测
+  username: "你的学号"
+  # 密码不要写在这里。优先级：系统密钥链 > 环境变量 JW_PASSWORD > 本字段
+  #   推荐：python -m src.main --set-password
+  password: ""
+  # CAS 登录后跳回的落地页。必须是 home.action —— index.action 对学生角色
+  # 返回「403 对不起,您没有权限」，那是管理端入口。
+  service_url: "http://bkjw.chd.edu.cn/eams/home.action"
+  # 留空即可：默认走「历史成绩」页，一次拿全部学期，不需要学期 ID。
+  # ⚠️ 别填。抓取是「第一条路径取到数据就返回」，填了等于把监控锁死在那个
+  #    学期上——新学期的成绩永远不会被发现，而且不报错，症状只是"一直没动静"。
+  #    仅在排查某个特定学期的解析问题时临时填，值取自成绩页 URL 的 semesterId=xxx
+  semester_id: ""
+
+schedule:
+  # 自适应：出分后自动加速，长期没动静自动降速。
+  # 改成 false 就固定用 interval_seconds。
+  # 运行中直接改本文件即可生效，不用重启进程。
+  adaptive: true
+
+  # ⚠️ 这三个有下限：**低于 300 秒直接拒绝启动**，低于 900 秒记一条警告。
+  # 觉得慢想调快，先看"每天多少轮"——静默 1-7 点，一天 18 小时在跑：
+  #   60 分钟 → 18 轮     30 分钟 → 36 轮     15 分钟 → 72 轮
+  #   10 分钟 → 108 轮     5 分钟 → 216 轮     1 分钟 → 1080 轮
+  # 教务系统是学校的。10 分钟已经相当积极，再快收益很小、风险不成比例。
+  # 改完跑一下 `python -m src.main --preflight`，它会把节奏换算成人话。
+  interval_seconds: 1800         # 常规档，30 分钟
+  active_interval_seconds: 900   # 加速档，15 分钟：刚出分，后面大概率还有
+  idle_interval_seconds: 3600    # 省电档，1 小时：很久没动静了
+
+  active_duration_minutes: 120   # 加速持续多久，期间没新变化就回落常规档
+  idle_after_hours: 24           # 多久没变化后进省电档
+
+  jitter_seconds: 180            # 随机抖动，避免固定节奏打接口
+  quiet_hours: [1, 7]            # 凌晨 1:00-7:00 不查，教务处这个点不出分
+  fail_alert_after: 5            # 连续失败几次后推一条告警给你
+
+notify:
+  # 多久没给你发过任何东西就主动报一次平安。0 = 关掉。
+  # 监控失效时最隐蔽的形态不是崩溃，是安静地停下来——你看到的现象是
+  # "最近没出分"，和一切正常一模一样。出分季这条几乎不会触发，
+  # 因为总有真实通知把计时器顶回去。
+  heartbeat_days: 7
+
+  # 推送正文给第三方看多少内容。PushPlus 的服务器能看到你发的一切。
+  #   full     完整明细：期中/期末/平时/总评/绩点都推（它也一并看得到）
+  #   brief    只有课程名和分数
+  # 这里的默认值必须和代码里的保持一致。
+  detail_level: full
+
+  pushplus:
+    enabled: true
+    # 留空则从环境变量 PUSHPLUS_TOKEN 读取。
+    # 去 pushplus.plus 微信扫码登录，首页就有 token，记得关注它的公众号。
+    # 免费额度 200 条/天，出分季完全够用。
+    token: ""
+
+safety:
+  # 两道登录闸，分工不同，别混着看：
+  #
+  # max_logins_per_hour —— 爆发闸。挡的是密度：2026-08-16 账号被判「频繁
+  #   登录」冻结，前一晚有四分半钟里连了 4 次，就是被这个数拦住的那种。
+  #
+  #   ⚠️ 它**不分类型全都数**，而提交密码的那一轮会记两笔（换票探测一笔、
+  #   提交密码一笔）。所以这个数不等于「能试几次」：填 1 = 一次尝试，
+  #   填 5 = 三次尝试。换票成功的轮次只记一笔，不受这个换算影响。
+  #
+  # max_password_logins_per_day —— 总量闸。只管真正提交密码的完整登录。
+  #   有了「换票复用」（会话失效时拿 7 天免登录的长期票据换张新 ticket，
+  #   不碰密码），这条路径应该几天才走一次，1 次/天绰绰有余。
+  #   它天天被拦说明票据没能留住，那时会连着推告警给你。
+  #
+  # 被冻的不只是查成绩，同一套密码还管着图书馆、校园卡、选课和学籍。
+  max_logins_per_hour: 1
+  max_password_logins_per_day: 1
+
+  # 一门课连着几轮没抓到才判定为撤回。1 = 发现就报。
+  # 长安大学的成绩整行出现、整行消失，所以"行不见了"就是撤回信号。
+  # 线上 52 轮抓取全部 27 门、全部走同一条路径，没有过波动，所以默认 1。
+  # 真收到莫名其妙的撤回通知（出分季教务处负载最高，那时没有数据），
+  # 调成 2 就会等一轮再确认。
+  withdraw_confirm_rounds: 1
+
+  # 一轮内撤回达到这么多门（含），判定为教务系统返回了残缺页面：
+  # 不推送、不更新快照，下一轮重试。真实撤回通常一次只有一两门。
+  max_withdrawals: 3
+
+storage:
+  snapshot_path: "data/grades.json"     # 当前状态（会被覆盖）
+  history_path: "data/history.jsonl"    # 变更流水（只追加，永不删改）
+  outbox_path: "data/pending.json"      # 推送失败的通知暂存在这儿，下轮补发
+  lock_path: "data/jwgrade.lock"        # 防止两个监控进程同时登录和写状态
+  heartbeat_path: "data/last_push.marker"   # 空文件，靠修改时间记"上次推送是什么时候"
+  # 登录失败后写在这儿，下次启动直接拒绝再试。cron 和 Windows 任务计划程序
+  # 不看退出码，拿错密码每 15 分钟撞一次能把统一身份认证账号锁死。
+  # 里面存的是密码的 HMAC：改密码后必须显式执行 --unlock-login，不能自动放行。
+  block_path: "data/login_blocked"
+  rate_path: "data/login_rate.json"     # 登录频率计数，配合 safety 下两项上限
+  # 登录会话（cookie）落盘。重启时先把它装回去，票据还有效就不用重新登录。
+  # 不存的话每次 systemctl restart 都会消耗掉当天唯一的密码额度，
+  # 当天第二次重启就再也登不进去了。这份文件等同于一把能看全部成绩的钥匙。
+  # 换账号时这份会被自动丢弃（里面记了学号的哈希），不会拿旧身份去查
+  session_path: "data/session.json"

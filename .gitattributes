@@ -1,0 +1,8 @@
+# 仓库自己规定行尾，不依赖每台机器的 core.autocrlf 设置
+* text=auto eol=lf
+
+# shell 脚本永远 LF —— 带 CR 的话 Linux 上会报 bad interpreter
+*.sh text eol=lf
+
+# 二进制，别碰
+*.png binary

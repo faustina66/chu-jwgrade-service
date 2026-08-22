@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 安全问题（凭据泄露、Cookie、认证绕过）
+    url: https://github.com/faustina66/chu-jwgrade-service/security/advisories/new
+    about: 不要开公开 Issue。走 GitHub 的私密安全报告渠道，只有仓库维护者能看到。
+
+  - name: 📖 先看部署指南
+    url: https://github.com/faustina66/chu-jwgrade-service/blob/main/docs/deployment.md
+    about: 装不上、脚本报错、退出码 20/21 —— 指南里都写了怎么办。
+
+  - name: 🔧 先看运维手册
+    url: https://github.com/faustina66/chu-jwgrade-service/blob/main/docs/operations.md
+    about: 改频率、改教务密码、停服务、换服务器、什么时候才真要重启。

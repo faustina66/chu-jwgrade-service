@@ -1,0 +1,36 @@
+# 本地配置与凭据
+/config.yaml
+/.env
+/.env.*
+!.env.example
+
+# 运行时状态：成绩、会话 Cookie、登录计数、发件箱和日志
+/data/
+/*.log
+*.jsonl
+*.marker
+*.lock
+*.bak
+*.corrupt-*
+*.foreign-*
+
+# 调试与构建产物
+/preview*.html
+/*.tar.gz
+/*.zip
+/.config.setup.yaml
+/.requirements.lock.*
+/.venv.harden-backup/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/

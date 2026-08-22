@@ -1,0 +1,90 @@
+name: 报告一个问题
+description: 程序跑不起来、行为不对、或者解析出错
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ⚠️ 先看这里：这是一个公开页面
+
+        你贴上来的任何东西，**互联网上所有人都能看到，而且会被搜索引擎收录**。
+        这个程序处理的恰好是最不该被公开的三样东西：
+
+        | 别贴 | 藏在哪里 |
+        |---|---|
+        | **学号、姓名** | 日志、`config.yaml`、成绩页 HTML |
+        | **成绩** | 日志、`data/grades.json`、`--dump` 存下来的 HTML、推送预览 |
+        | **密码、Cookie、CAS ticket、PushPlus token** | `/etc/jwgrade.env`、`data/session.json`、带参数的完整 URL |
+
+        **贴之前，把这些替换成 `<学号>`、`<课程名>`、`<token>` 之类的占位符。**
+
+        > 如果不小心贴出去了：**删掉 Issue 不等于撤销泄露**。
+        > 立刻去改教务密码、在 PushPlus 后台重置 token，然后再删。
+
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: 确认
+      options:
+        - label: 我已经检查过下面要贴的内容，里面没有学号、姓名、真实成绩、密码、Cookie 或 token
+          required: true
+        - label: 我看过 `docs/deployment.md` 和 `docs/operations.md`，那里面没有解决这个问题
+          required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 出了什么问题
+      description: 你做了什么、期望看到什么、实际看到了什么。
+      placeholder: |
+        做了：跑 bash deploy/setup.sh
+        期望：装完并启动服务
+        实际：卡在冒烟测试，退出码 20
+    validations:
+      required: true
+
+  - type: input
+    id: exitcode
+    attributes:
+      label: 退出码（如果有）
+      description: "脚本或 systemd 报的数字。20 = 登录被拒，21 = 配置有问题。"
+      placeholder: "20"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志（脱敏后）
+      description: |
+        `journalctl -u jwgrade -n 50 --no-pager`
+
+        **贴之前替换掉学号、课程名和成绩。**
+        URL 里 `ticket=` / `JSESSIONID=` 后面那一串一定要删。
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: "`git rev-parse --short HEAD`，或者 Release 的标签名。"
+      placeholder: "v0.1.0-alpha.1"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 系统环境
+      description: "`lsb_release -d` 和 `python3 --version` 的输出。"
+      placeholder: "Ubuntu 24.04 / Python 3.12.3"
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        **关于「学校改版了，程序解析不出成绩」这类问题**：
+
+        原始 HTML 对排查确实最有用，但那份文件里有你的姓名、学号和**全部成绩**，
+        **不要直接贴上来**。请只描述表格结构变了什么（比如「多了一列学分绩点」、
+        「学期那一列的写法从 2025-2026-1 变成了 2025 秋」），
+        或者贴一行**把所有内容都换成假数据**的示例。
