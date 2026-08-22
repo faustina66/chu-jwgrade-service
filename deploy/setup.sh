@@ -25,6 +25,41 @@ SVC_USER=jwgrade
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
+# 凭据一律不回显，但**回读**一遍能验证的信息。只报长度和形状、绝不报内容：
+# 终端会被截图，这个项目从头到尾按这个前提做。
+#
+# 光是字符数就能当场抓住「粘漏了半截」「少按一个键」——2026-08-22 真机装机
+# 输了个 7 位的密码，因为看不见，一直到事后数长度才发现。
+say_len() { printf '  已记录：%d 个字符\n' "${#1}"; }
+
+# 密码：只回读长度
+read_password() {
+  read -rsp "$1" JW_PASSWORD; echo
+  say_len "$JW_PASSWORD"
+}
+
+# token：多验一层形状。PushPlus 的 token 是 32 位十六进制，形状不对就当场问，
+# 能抓住「粘漏半截」「把用户名粘进来」「粘成一整条 URL」这几种。
+read_token() {
+  local t retry
+  while :; do
+    read -rsp "$1" t; echo
+    if [[ -z "$t" ]]; then
+      echo "  没有输入"
+      break
+    fi
+    printf '  已记录：%d 个字符' "${#t}"
+    if [[ "$t" =~ ^[0-9a-fA-F]{32}$ ]]; then
+      echo "，格式符合（32 位十六进制）"
+      break
+    fi
+    echo " —— PushPlus 的 token 通常是 32 位十六进制，这个看着不像。"
+    read -rp "  要重新输入吗？[Y/n]: " retry
+    if [[ "$retry" =~ ^[Nn]$ ]]; then break; fi
+  done
+  PUSHPLUS_TOKEN="$t"
+}
+
 command -v apt-get >/dev/null || {
   echo "本脚本按 Ubuntu/Debian 写的。其它发行版请把 apt-get 换成 yum/dnf。"; exit 1; }
 
@@ -115,8 +150,8 @@ true
 # 不会出现在 shell 历史或 ps 输出里。
 if [[ ! -f "$ENV_FILE" ]]; then
   say "配置凭据（输入时不显示，没有就直接回车跳过）"
-  read -rsp "教务系统密码: " JW_PASSWORD; echo
-  read -rsp "PushPlus token: " PUSHPLUS_TOKEN; echo
+  read_password "教务系统密码: "
+  read_token "PushPlus token（没有就直接回车跳过）: "
   # printf 而非 heredoc：值里的 $ 和反引号不会被展开
   printf 'JW_PASSWORD=%s\nPUSHPLUS_TOKEN=%s\n' "$JW_PASSWORD" "$PUSHPLUS_TOKEN" \
     | sudo tee "$ENV_FILE" >/dev/null
@@ -129,7 +164,7 @@ else
   echo "凭据文件 $ENV_FILE 已存在。"
   read -rp "要重新输入教务密码吗？（在教务系统改过密码就选 y）[y/N]: " CHANGE_PW
   if [[ "$CHANGE_PW" =~ ^[Yy]$ ]]; then
-    read -rsp "教务系统密码: " JW_PASSWORD; echo
+    read_password "教务系统密码: "
     # 只换密码，PushPlus token 原样保留
     ENV_KEEP="$(sudo grep -v '^JW_PASSWORD=' "$ENV_FILE" || true)"
     {
@@ -149,7 +184,7 @@ else
   if ! sudo grep -qE '^PUSHPLUS_TOKEN=.+' "$ENV_FILE"; then
     echo
     echo "凭据文件里的 PushPlus token 是空的。"
-    read -rsp "PushPlus token（直接回车则关闭推送）: " PUSHPLUS_TOKEN; echo
+    read_token "PushPlus token（直接回车则关闭推送）: "
     ENV_KEEP="$(sudo grep -v '^PUSHPLUS_TOKEN=' "$ENV_FILE" || true)"
     {
       if [[ -n "$ENV_KEEP" ]]; then printf '%s\n' "$ENV_KEEP"; fi
@@ -343,7 +378,7 @@ for (( TRY = 1; TRY <= SMOKE_ATTEMPTS; TRY++ )); do
 
   echo
   echo "登录没通过，多半是密码打错了。还可以再试 $(( SMOKE_ATTEMPTS - TRY )) 次。"
-  read -rsp "重新输入教务系统密码: " JW_PASSWORD; echo
+  read_password "重新输入教务系统密码: "
   # 只换密码，PushPlus token 原样保留——没必要让人把两样都重敲一遍
   ENV_KEEP="$(sudo grep -v '^JW_PASSWORD=' "$ENV_FILE" || true)"
   {
