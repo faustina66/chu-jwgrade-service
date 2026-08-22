@@ -8,6 +8,16 @@
 
 ## 推送效果
 
+### 微信通知列表
+
+成绩发生变化后，PushPlus 会在微信中显示通知摘要。点击“查看详情”即可打开完整内容。
+
+<p align="center">
+  <img src="docs/wechat-notification-list.jpg" alt="微信通知列表效果" width="360">
+</p>
+
+### 成绩详情
+
 ![推送效果示例](docs/push-example.png)
 
 左侧是正常成绩通知，右侧是不及格成绩通知。异常分数、绩点和相关明细会标红显示。
