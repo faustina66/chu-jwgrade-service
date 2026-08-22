@@ -18,7 +18,7 @@
 - 云服务器管理后台提供的 WebShell、远程终端或 VNC 终端；
 - 本项目的 GitHub 仓库地址（下一步要 clone 它）；
 - 自己的教务系统学号和密码；
-- PushPlus token。
+- PushPlus token（按下方“准备 PushPlus”完成注册并复制）。
 
 > **必须使用受支持的系统版本。** 本项目需要 **Python 3.10 及以上版本**；Ubuntu 20.04 自带 Python 3.8，Debian 11 自带 Python 3.9，均不满足运行要求。
 > 部署脚本会在安装依赖前检查 Python 版本。如果版本不符合要求，脚本会停止并提示更换系统镜像。
@@ -27,14 +27,15 @@
 
 ### 准备 PushPlus
 
-PushPlus 要求消息发送方先完成实名认证。本文更新时，实名认证页面显示的认证服务费为 **3.90 元**；价格可能调整，请以 PushPlus 实际付款页面为准。实名认证通常只需成功完成一次，之后可以在免费额度内长期使用微信推送，无需为本项目的每条成绩通知单独付费。免费额度和服务规则以 [PushPlus 官方说明](https://www.pushplus.plus/doc/function/verify.html) 为准。
+按下面的顺序准备：
 
-完成实名认证后，请在 PushPlus 首页复制 token，并关注“pushplus 推送加”公众号。为了让成绩通知在微信中弹窗提醒，还需要完成以下设置：
+1. 打开 [PushPlus 官网](https://www.pushplus.plus/)，或直接进入 [登录页面](https://www.pushplus.plus/login.html)，使用微信完成登录；
+2. 打开 [实名认证页面](https://www.pushplus.plus/center/real-auth?source=push) 并按提示完成认证。本文更新时，页面显示的认证服务费为 **3.90 元**；价格可能调整，请以实际付款页面为准。认证规则可查看 [PushPlus 实名认证说明](https://www.pushplus.plus/doc/function/verify.html)；
+3. 进入 [一对一消息页面](https://www.pushplus.plus/push1.html)，在“用户 token”一栏点击“一键复制”。部署时需要填写这个 token，请不要发给他人，也不要上传到 GitHub；
+4. 关注“pushplus 推送加”公众号。打开公众号设置，进入“通知消息管理”，确认通知均设置为“接收”，并关闭消息免打扰；
+5. 在公众号菜单中打开“功能 → 消息开关”，确认“接收消息”已启用。
 
-1. 打开“pushplus 推送加”公众号的设置；
-2. 进入“通知消息管理”，确认通知均设置为“接收”；
-3. 关闭该公众号的消息免打扰；
-4. 在公众号菜单的“功能 → 消息开关”中确认“接收消息”已启用。
+实名认证通常只需成功完成一次，之后可以在免费额度内长期使用微信推送，无需为本项目的每条成绩通知单独付费。
 
 如果日志显示推送成功，但微信没有弹窗或没有收到消息，请按 [PushPlus 收不到消息排查说明](https://www.pushplus.plus/doc/help/message.html) 检查上述设置。
 
