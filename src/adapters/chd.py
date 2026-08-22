@@ -195,7 +195,7 @@ class ChdAdapter(Adapter):
         if salt is None:
             raise LoginTransient("登录页没找到 pwdEncryptSalt，页面结构可能已改版")
 
-        self._assert_no_captcha()
+        self._probe_captcha()
 
         payload = {
             "username": self.username,
@@ -300,8 +300,21 @@ class ChdAdapter(Adapter):
         tag = soup.find("input", id=element_id)
         return tag.get("value", "") if tag else None
 
-    def _assert_no_captcha(self) -> None:
-        """对应登录页的 checkUserCaptcha()。连续多次输错密码后可能返回 true。"""
+    def _probe_captcha(self) -> None:
+        """对应登录页的 checkUserCaptcha()。**只记录日志，不中止登录。**
+
+        这个接口回答的是「该账号当前是否需要验证码」。实测发现该标志存续
+        时间很短且不稳定：探测返回 true 之后不到一分钟，同一账号使用正确
+        密码即可正常登录，稍后再次探测已返回 false。
+
+        把它当作判定依据会误伤本可成功的登录，而且误伤发生在**尚未确认
+        密码是否正确之前**——真正的原因可能只是密码输错，程序却因为提前
+        中止而无从得知，只能报出一个未经验证的原因，并据此给出错误的处理
+        建议（提示更换密码，而验证码问题换密码没有任何作用）。
+
+        权威判定在登录响应的正文里：确实需要验证码时页面会包含「请输入
+        验证码」，由 _raise_for_login_error() 负责。这里只做提前探查。
+        """
         try:
             r = self.session.get(
                 f"{IDS}/authserver/checkNeedCaptcha.htl",
@@ -324,24 +337,31 @@ class ChdAdapter(Adapter):
         if not isinstance(data, dict):
             log.debug("验证码探测返回的不是对象，忽略: %s", str(data)[:80])
             return
-        need = data.get("isNeed")
-        if need:
-            # LoginNeedsHuman 而不是 LoginFailed：密码可能完全是对的，
-            # 人在网页版过了验证码之后，拿**原密码**就该能恢复。
-            raise LoginNeedsHuman(
-                "认证服务器要求图形验证码（通常是密码连续错误触发）。"
-                "请手动登录一次网页版解除，再执行 --unlock-login 恢复。"
-            )
+        if data.get("isNeed"):
+            # 仅告警。确实需要验证码时，登录响应的正文会写明，
+            # 那时才由 _raise_for_login_error() 作出判定。
+            log.warning(
+                "认证服务器提示该账号可能需要图形验证码，仍继续登录。"
+                "该标志并不稳定，确实需要时登录响应中会写明。")
 
     @staticmethod
     def _raise_for_login_error(html: str) -> None:
         # 只有第一种情况能够确认密码错误。账号锁定和验证码也可能在密码正确时
         # 发生，例如他人多次尝试该学号。分别抛出异常，才能采用不同恢复方式：
         # 密码错误需要更换密码；账号锁定或验证码问题可在人工处理后继续使用原密码。
+        # 判定在这里作出，因此提示也要在这里给全：后两种的恢复方式与
+        # 「密码错误」相反，**更换密码没有作用**，需要人工在网页端处理。
+        # 不写明的话，使用者的第一反应仍然是再试一个密码。
         for pattern, msg, needs_human in [
             ("用户名或密码错误", "用户名或密码错误", False),
-            ("账号已被锁定|被锁定", "账号已被锁定", True),
-            ("请输入验证码", "需要图形验证码", True),
+            ("账号已被锁定|被锁定",
+             "账号已被锁定。**更换密码没有作用**——请前往 "
+             "https://ids.chd.edu.cn 等待锁定解除并确认可以正常登录，"
+             "再执行 --unlock-login 恢复。", True),
+            ("请输入验证码",
+             "认证服务器要求图形验证码。**更换密码没有作用**——请前往 "
+             "https://ids.chd.edu.cn 手动登录一次以通过验证码，"
+             "再执行 --unlock-login 恢复。", True),
         ]:
             if re.search(pattern, html):
                 raise (LoginNeedsHuman if needs_human else LoginFailed)(msg)

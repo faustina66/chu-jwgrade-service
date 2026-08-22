@@ -327,6 +327,9 @@ sudo systemd-run --quiet --wait --collect --pipe \
 say "先跑一次，确认能登录并解析出成绩"
 SMOKE_ATTEMPTS=3
 DONE_TRIES=0
+# 必须在循环外初始化：循环可能因 RESULT -ne 20 提前 break，此时该变量
+# 尚未赋值，而后面的收尾逻辑要读取它——脚本启用了 set -u，会直接报错。
+BLOCK_STATE=""
 for (( TRY = 1; TRY <= SMOKE_ATTEMPTS; TRY++ )); do
   DONE_TRIES=$TRY
   set +e
@@ -354,6 +357,34 @@ for (( TRY = 1; TRY <= SMOKE_ATTEMPTS; TRY++ )); do
   if [[ $RESULT -ne 20 ]]; then
     break
   fi
+
+  # 退出码 20 涵盖两类失败，二者的恢复方式相反：
+  #   blocked  已确认密码错误，需要更换密码
+  #   human    需要验证码或账号被临时锁定，**更换密码没有作用**，
+  #            必须由人在网页端处理一次
+  # 退出码无法区分（LoginNeedsHuman 是 LoginFailed 的子类，同为 20），
+  # 但登录阻断标记里记录了 state。据此给出对应的提示，避免在验证码
+  # 场景下反复要求重新输入密码。
+  if [[ -f "${DATA_DIR}/login_blocked" ]]; then
+    BLOCK_STATE="$(sudo "$VENV/bin/python" -c 'import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        print(json.load(f).get("state", ""))
+except Exception:
+    print("")' "${DATA_DIR}/login_blocked" 2>/dev/null || true)"
+  fi
+  if [[ "$BLOCK_STATE" == "human" ]]; then
+    cat <<EOF
+
+本次失败**不是密码错误**，因此不会要求重新输入密码，重新输入也无法解决。
+
+原因是认证服务器要求图形验证码，或账号被临时锁定。这两种情况都需要人工处理：
+请打开 https://ids.chd.edu.cn 手动登录一次（通过验证码，或等待锁定解除），
+确认可以正常登录后，重新运行本脚本。
+EOF
+    break
+  fi
+
   if [[ $TRY -eq $SMOKE_ATTEMPTS ]]; then
     break
   fi
@@ -400,7 +431,11 @@ if [[ $RESULT -ne 0 ]]; then
 首次运行失败（退出码 $RESULT），服务未启动。先排查上面的报错。
 如果是解析问题，加 --dump 重跑一次可把原始页面存到 ${PROJECT_DIR}/data/dump_*.html（包含姓名、学号和全部成绩；查看后请及时删除）。
 EOF
-  if [[ $RESULT -eq 20 ]]; then
+  if [[ $RESULT -eq 20 && "$BLOCK_STATE" == "human" ]]; then
+    cat <<EOF
+上面的失败是验证码或账号锁定，**不是密码错误**。请在网页端处理后重新运行本脚本。
+EOF
+  elif [[ $RESULT -eq 20 ]]; then
     # 说 $DONE_TRIES 而不是上限：真被小时闸提前拦住时，实际试的次数会更少，
     # 避免报告一个实际没有发生的次数。
     cat <<EOF
