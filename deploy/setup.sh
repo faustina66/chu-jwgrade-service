@@ -155,8 +155,8 @@ if [[ ! -f "$ENV_FILE" ]]; then
   sudo chown root:"$SVC_USER" "$ENV_FILE"
 else
   # 不静默跳过：改了教务密码的人重跑本脚本，就是为了换掉它。
-  # 原来的提示让人去 sudo rm 凭据文件——那个指引本身就吓人，而且删完
-  # 避免要求用户再次输入 PushPlus token。
+  # 旧提示要求用户删除整个凭据文件，容易误操作，删除后还要重新输入
+  # PushPlus token。这里只更新教务密码，并保留现有 token。
   echo "凭据文件 $ENV_FILE 已存在。"
   read -rp "要重新输入教务密码吗？（在教务系统改过密码就选 y）[y/N]: " CHANGE_PW
   if [[ "$CHANGE_PW" =~ ^[Yy]$ ]]; then
@@ -398,11 +398,11 @@ if [[ $RESULT -ne 0 ]]; then
   cat <<EOF
 
 首次运行失败（退出码 $RESULT），服务未启动。先排查上面的报错。
-如果是解析问题，加 --dump 重跑一次可把原始页面存到 ${PROJECT_DIR}/data/dump_*.html（含姓名学号和全部成绩，看完记得删）。
+如果是解析问题，加 --dump 重跑一次可把原始页面存到 ${PROJECT_DIR}/data/dump_*.html（包含姓名、学号和全部成绩；查看后请及时删除）。
 EOF
   if [[ $RESULT -eq 20 ]]; then
     # 说 $DONE_TRIES 而不是上限：真被小时闸提前拦住时，实际试的次数会更少，
-    # 报一个没发生过的数就是在骗人。
+    # 避免报告一个实际没有发生的次数。
     cat <<EOF
 本轮 ${DONE_TRIES} 次密码尝试均未通过。请先前往 https://ids.chd.edu.cn 手动确认密码。
 确认后再重新运行本脚本。当前一小时内的尝试次数已用完，请等待约一小时。

@@ -80,11 +80,11 @@ _HEADER_MAP = {
     "gpa": ["绩点", "平均绩点", "课程绩点"],
 }
 
-# 这两个字段一旦落到备选列上，**含义就变了**，必须喊一声。
-# 见 _warn_fallback_columns —— 静默回退不会报错，它撒谎。
+# 这两个字段一旦使用备选列，含义就可能改变，必须记录警告。
+# 见 _warn_fallback_columns：静默回退不会报错，却可能产生含义错误的数据。
 _PREFERRED = {
     # 「最终」是补考/重修**之后**的分；「总评」「期末」是补考之前的。
-    # 悄悄换列 = 推给你一个看着完全正常、实际过时的数字。
+    # 静默切换列可能推送一个看似正常、实际已经过时的数字。
     "score": ("最终", "最终成绩"),
     # 它是 Grade.key 的一半。换一列，所有课的键都变，一整轮全被判成新增。
     "course_id": ("课程代码",),
@@ -143,9 +143,8 @@ class ChdAdapter(Adapter):
         TGT。只要它还有效，带 service 参数访问登录页就会被直接 302 送回教务
         系统并附带新 ticket，整个过程无需提交密码。
 
-        这条路径是必要功能：EAMS 的 JSESSIONID 大约一个多小时后失效，旧版本
-        会在每次失效后重新提交密码。2026-08-16，账号曾因此被统一身份认证判为
-        「频繁登录」并冻结 10 分钟。
+        这条路径是必要功能：EAMS 的 JSESSIONID 大约一个多小时后失效，如果
+        每次失效后都重新提交密码，可能触发统一身份认证的频繁登录保护。
 
         如果缺少这条路径，7 天免登录生效后反而会导致会话恢复失败：
         原来那个带自动跳转的 GET 会落在教务系统首页上，页面里找不到
@@ -220,11 +219,11 @@ class ChdAdapter(Adapter):
             timeout=20,
             allow_redirects=False,      # 跳转要自己跟，见 _follow()
         )
-        # 认证失败时 CAS 回什么状态码，各校配置不同。**长安大学实测
-        # 实际测试中，密码错误返回 401，而不是 200。
+        # 认证失败时 CAS 返回的状态码因学校配置而异。长安大学实测中，
+        # 密码错误返回 401，而不是 200。
         #
         # 老代码只在 200 分支里做分类，401 直接落到 raise_for_status()，
-        # 抛出原始 HTTPError —— 于是退出码是 1 而不是 20，后果一串：
+        # 抛出原始 HTTPError，使退出码变成 1 而不是 20，并引发以下连锁问题：
         #   · setup.sh 的三次重试只认 20，完全不触发
         #   · 微信告警发不出去（未捕获异常在推送之前就逃走了）
         #   · 阻断标记停在 armed（「结果没能确认」），而实际结果是明确的
@@ -302,7 +301,7 @@ class ChdAdapter(Adapter):
         return tag.get("value", "") if tag else None
 
     def _assert_no_captcha(self) -> None:
-        """对应登录页的 checkUserCaptcha()。密码连错几次后会被翻成 true。"""
+        """对应登录页的 checkUserCaptcha()。连续多次输错密码后可能返回 true。"""
         try:
             r = self.session.get(
                 f"{IDS}/authserver/checkNeedCaptcha.htl",
@@ -336,9 +335,9 @@ class ChdAdapter(Adapter):
 
     @staticmethod
     def _raise_for_login_error(html: str) -> None:
-        # 只有第一条是"密码被证伪了"，后两条不是——账号锁定和验证码都可能
-        # 这也可能发生在密码正确的情况下，例如他人多次尝试该学号。单独抛出异常，
-        # 恢复方式才能不同：前者必须换密码，后两者原密码就能解锁。
+        # 只有第一种情况能够确认密码错误。账号锁定和验证码也可能在密码正确时
+        # 发生，例如他人多次尝试该学号。分别抛出异常，才能采用不同恢复方式：
+        # 密码错误需要更换密码；账号锁定或验证码问题可在人工处理后继续使用原密码。
         for pattern, msg, needs_human in [
             ("用户名或密码错误", "用户名或密码错误", False),
             ("账号已被锁定|被锁定", "账号已被锁定", True),
@@ -425,11 +424,11 @@ class ChdAdapter(Adapter):
 
     @staticmethod
     def _warn_fallback_columns(headers: list[str], idx: dict[str, int]) -> None:
-        """用了备选列就喊一声。
+        """使用备选列时记录警告。
 
-        _HEADER_MAP 的候选链是为了扛住改版，但**回退是会改变含义的**。
-        这类错误最坏的地方在于它不报错：通知照发，课程名、绩点、排版全对，
-        只有那个数字是旧的，而你没有任何理由怀疑它。
+        _HEADER_MAP 的候选链用于兼容页面改版，但回退可能改变字段含义。
+        此类问题不会导致程序报错：通知仍会发送，课程名、绩点和排版也可能正常，
+        但分数可能来自含义不同的列，因此必须明确记录警告。
         """
         for field, preferred in _PREFERRED.items():
             i = idx.get(field)
@@ -439,7 +438,7 @@ class ChdAdapter(Adapter):
             if actual not in preferred:
                 log.warning(
                     "解析用了备选列：%s 取自「%s」而不是「%s」。教务处可能改版了，"
-                    "推出来的数字未必是你以为的那个。", field, actual, preferred[0])
+                    "推送的数字可能来自含义不同的列。", field, actual, preferred[0])
 
     @classmethod
     def _parse(cls, html: str) -> list[Grade]:

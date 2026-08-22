@@ -170,7 +170,7 @@ class LoginRate:
             f"约 {wait // 3600 + 1} 小时后可再试。")
 
     def note(self, kind: str = PASSWORD) -> None:
-        """认证动作已经发出前记录一次；读写失败必须向上抛出。"""
+        """认证动作发出前记录一次；读写失败必须向上抛出。"""
         if kind not in (TICKET, PASSWORD):
             raise ValueError(f"未知认证动作类型：{kind!r}")
         entries = self._read()

@@ -20,9 +20,9 @@ systemd 单元名 `jwgrade`，以专用的 `jwgrade` 用户身份运行。
 | 是否正在运行 | `systemctl is-active jwgrade` |
 | 详细状态 | `systemctl status jwgrade --no-pager -l` |
 | 查看最近日志 | `journalctl -u jwgrade -n 30 --no-pager` |
-| 实时查看日志 | `journalctl -u jwgrade -f` |
+| 实时查看日志 | `journalctl -u jwgrade -f`（按 `Ctrl+C` 退出查看，不会停止服务） |
 | 今天的登录额度 | `cat /opt/jwgrade/data/login_rate.json` |
-| 看变更历史 | 见下方「查状态 · 第三层」 |
+| 看变更历史 | 见下方「一、查看运行状态 → 第三层」 |
 | 停止服务并关闭开机自启 | `systemctl disable --now jwgrade` |
 | 启动服务并开启开机自启 | `systemctl enable --now jwgrade` |
 
@@ -93,13 +93,13 @@ cd /opt/jwgrade && sudo -u jwgrade .venv/bin/python -m src.main --history 20
 **必须先执行 `cd /opt/jwgrade`。** `python -m src.main` 会从当前目录查找 `src` 包；
 如果在其他目录运行，将提示 `No module named 'src'`。所有 `-m src.main` 命令都遵循这一规则。
 
-上次成功抓取是什么时候，看 `grades.json` 的修改时间：
+如需查看上次成功抓取时间，请检查 `grades.json` 的修改时间：
 
 ```bash
 ls -l /opt/jwgrade/data/
 ```
 
-今天的登录额度用掉多少：
+查看今天已使用的登录额度：
 
 ```bash
 cat /opt/jwgrade/data/login_rate.json
@@ -178,7 +178,7 @@ nano /opt/jwgrade/config.yaml
 cd /opt/jwgrade && sudo -u jwgrade .venv/bin/python -m src.main --preflight --config /opt/jwgrade/config.yaml
 ```
 
-它会用分钟数和每天预计轮数显示当前轮询设置：
+预检结果会显示各档位的间隔（分钟）以及每天预计轮询次数：
 
 ```text
 轮询节奏：加速 15 分钟 / 常规 30 分钟 / 省电 60 分钟
@@ -369,7 +369,7 @@ systemctl enable --now jwgrade
 如果一并迁移 `session.json`，新服务器会优先尝试恢复旧会话；
 旧会话仍有效时无需重新认证，失效时会按正常流程换票或登录。
 
-> **服务器到期释放是不可逆的。** 买之前就在日历上设好到期提醒。
+> **服务器到期释放是不可逆的。** 购买服务器后，请立即在日历中设置到期提醒。
 
 ---
 
@@ -380,11 +380,12 @@ systemctl enable --now jwgrade
 | 改了什么 | 要重启吗 | 为什么 |
 |---|---|---|
 | README / 文档 | ❌ | 服务不读取这些文件；需要查看最新版文档时再更新代码 |
-| 校验逻辑、注释、报错文案 | ❌ 可稍后处理 | 只在加载配置时生效；可在下次计划重启时一并启用 |
+| Python 校验逻辑或报错文案 | ✅ | 服务需要重新加载修改后的代码 |
+| Python 注释 | ❌ | 注释不影响程序运行 |
 | 抓取、比对、渲染或推送代码 | ✅ | 服务需要重新加载修改后的代码 |
 | `config.yaml` 的 `schedule` 段 | ❌ | 热重载，最多等一轮 |
-| `config.yaml` 的 `notify` / `safety` / `storage` 段 | ✅ 要 | 热重载只覆盖 `schedule` |
-| `/etc/jwgrade.env`（密码、token） | ✅ 要 | systemd 只在启动时读它 |
+| `config.yaml` 的 `notify` / `safety` / `storage` 段 | ✅ 需要 | 热重载只覆盖 `schedule` |
+| `/etc/jwgrade.env`（密码、token） | ✅ 需要 | systemd 只在启动时读它 |
 
 **为什么要避免不必要的重启：**
 
@@ -427,9 +428,9 @@ systemctl enable --now jwgrade
 
 | 子命令 | 是否需要凭据 | 运行方式 |
 |---|---|---|
-| `--history` `--preflight` `--unlock-login` | 不要 | `sudo -u jwgrade` 就行 |
+| `--history` `--preflight` `--unlock-login` | 不需要 | 直接使用 `sudo -u jwgrade` 运行 |
 | `--demo` `--test-notify` `--report` | **需要**（只调用推送服务，不访问教务系统） | 见下方说明 |
-| `--once` | **要**，而且**会真的访问学校** | 同下，慎用 |
+| `--once` | **需要**，而且**会实际访问学校教务系统** | 使用下方方式运行，操作前请确认确有需要 |
 
 需要凭据时，让 systemd 去读环境文件：
 
@@ -452,7 +453,7 @@ cd /opt/jwgrade && bash tools/test_push.sh
 
 | 参数 | 用途 | 是否访问教务系统 | 是否需要凭据 |
 |---|---|---|---|
-| `--preflight` | 检查配置和状态目录，翻译轮询节奏 | ❌ | ❌ |
+| `--preflight` | 检查配置和状态目录，显示轮询设置 | ❌ | ❌ |
 | `--history [N]` | 看成绩变更历史，可只看最近 N 条 | ❌ | ❌ |
 | `--unlock-login` | 确认已换正确密码后解除登录阻断 | ❌ | ❌ |
 | `--demo` | 使用虚构数据模拟一次成绩通知，查看当前详略级别的显示效果 | ❌ | ✅ |

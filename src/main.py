@@ -60,8 +60,8 @@ EXIT_CONFIG_ERROR = 21
 
 
 def demo_grade() -> Grade:
-    """--demo 用的假成绩。**字段要和真实抓到的一模一样**，缺一格 demo 就
-    和线上长得不一样了——2026-08-19 就漏过 `课程序号`，推出来少一行。
+    """--demo 使用的虚构成绩。字段应与真实抓取结果保持一致，否则演示消息
+    可能缺少课程序号等内容，与实际通知不一致。
 
     样例统一使用满分，不包含真实成绩，便于截图或分享。
 
@@ -471,9 +471,9 @@ def _run() -> int:
         level = cfg.get("notify", {}).get("detail_level", "full")
         title, body = notifier.render([Change("new", demo_grade())], level)
         print()
-        print(f"详略级别: {level}")
-        print(f"标题: {title}")
-        print("正文纯文本:")
+        print(f"详略级别：{level}")
+        print(f"标题：{title}")
+        print("正文纯文本：")
         print(BeautifulSoup(body, "lxml").get_text(chr(10), strip=True))
         print()
         return 0 if _push(notifiers, title, body) else 1

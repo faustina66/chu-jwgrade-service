@@ -3,7 +3,7 @@
 优先级：系统密钥链 > 环境变量 > 配置文件（不推荐，仅为兼容保留）。
 
 系统密钥链就是 Windows 凭据管理器 / macOS 钥匙串 / Linux Secret Service，
-由操作系统加密保管，不会以明文躺在项目目录里被误提交或被同步到网盘。
+由操作系统加密保管，不会以明文保存在项目目录中，从而降低误提交或同步到网盘的风险。
 """
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def store_interactive(username: str) -> int:
     if not pwd:
         print("密码为空，已取消")
         return 1
-    if pwd != getpass.getpass("再输一次: "):
+    if pwd != getpass.getpass("请再次输入密码: "):
         print("两次输入不一致，已取消")
         return 1
 

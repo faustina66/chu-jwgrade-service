@@ -1,11 +1,10 @@
 """把登录会话落盘，让重启不再等于一次登录。
 
 cookie 原本只活在进程内存里，于是每次 systemctl restart 都要重新完整登录。
-2026-08-16 账号被判「频繁登录」冻结，这三天里我为了部署让服务重启了八次，
-每一次都是一次密码提交。
+频繁重启会反复提交密码，可能触发统一身份认证的频繁登录保护。
 
-而一旦把「完整登录」限成一天一次，不落盘就成了脚枪：当天第二次重启就再也
-登不进去，监控停摆一整天。
+如果将完整登录限制为每天一次，却不持久化会话，当天第二次重启后将无法恢复
+登录，监控可能中断一整天。
 
 存的是完整的 cookie 属性而不是 name→value：CASTGC 在 ids.chd.edu.cn 上、
 JSESSIONID 在 bkjw.chd.edu.cn 上，丢掉 domain 就送不对地方。
@@ -39,7 +38,7 @@ class SessionStoreError(RuntimeError):
 class SessionStore:
     def __init__(self, path: str | Path, username: str = ""):
         self.path = Path(path)
-        # 快照和发件箱都绑了学号，这份更该绑：里面是活的 CAS 会话，
+        # 快照和发件箱都绑定了学号，会话文件更需要绑定：其中包含有效的 CAS 会话，
         # 更换账号后不能恢复旧 cookie，否则可能以原账号身份查询成绩。
         self.account = account_fingerprint(username)
 

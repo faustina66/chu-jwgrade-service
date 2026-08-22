@@ -40,7 +40,7 @@ _KEYS = {
 # 三个轮询间隔的下限。低于 MIN 拒绝启动，低于 WARN 只记一条警告。
 #
 # 这是给"觉得 30 分钟太慢"的人准备的护栏。旧校验是 minimum=1，填 60 能过，
-# 然后每分钟打一次教务系统。轮询确实不等于登录（会话能复用，登录闸另算），
+# 然后每分钟访问一次教务系统。轮询确实不等于登录（会话能复用，登录闸另算），
 # 但每天上千次 GET 对一个学校系统仍然是很大的量。
 #
 # 300 秒是保守下限。修改代码常量的门槛高于误填配置值，
@@ -232,10 +232,10 @@ def rounds_per_day(interval_seconds, quiet_hours=()) -> int:
 def interval_problem(label: str, value: int, quiet_hours=()) -> str | None:
     """间隔太密返回一句可操作的说明；偏快只记一条警告并返回 None。
 
-    **配置里的三个间隔和命令行 --interval 共用这一条。** 2026-08-20 发现
-    --interval 完全绕过了配置这道校验——它在校验之后直接改 ScheduleConfig
-    的字段，只被 next_delay() 的 max(60, ...) 兜着，等于每分钟打一次学校。
-    共用同一个函数，两条路的下限才不会各说各话。
+    配置里的三个间隔和命令行 --interval 共用这一条。命令行参数会在配置校验后
+    修改 ScheduleConfig；如果不复用此校验，就只能依靠 next_delay() 的
+    max(60, ...) 兜底，最短可能每分钟访问一次学校。共用同一函数可以保证
+    两种配置方式采用相同下限。
     """
     if value >= WARN_INTERVAL_SECONDS:
         return None
@@ -386,8 +386,8 @@ def _validate(cfg: dict, require_push: bool = True) -> None:
 
     safety = cfg.get("safety") or {}
     check_int("safety.max_withdrawals", safety.get("max_withdrawals"))
-    # 一小时最多登录几次。2026-08-16 账号因「频繁登录」被冻结过一次，
-    # 该限制用于避免认证请求过于频繁，不应设置得过于宽松。
+    # 一小时最多登录几次。该限制用于避免认证请求过于频繁，
+    # 不应设置得过于宽松。
     check_int("safety.max_logins_per_hour", safety.get("max_logins_per_hour"))
     check_int("safety.max_password_logins_per_day",
               safety.get("max_password_logins_per_day"))
