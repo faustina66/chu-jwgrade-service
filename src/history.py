@@ -112,7 +112,7 @@ def _pad(s: str, target: int) -> str:
 
 
 def render(rows: list[dict]) -> str:
-    """把历史渲染成一眼能扫的时间线。"""
+    """将历史记录渲染为便于快速查看的时间线。"""
     valid_rows = [r for r in rows if _row_problem(r) is None]
     if not valid_rows:
         return "还没有任何变更记录。"

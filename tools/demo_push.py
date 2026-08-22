@@ -1,4 +1,4 @@
-"""推送样例集：把所有会发生的消息形态跑一遍。
+"""推送样例集：预览项目支持的各种消息样式。
 
     python tools/demo_push.py                         只生成 HTML 预览，不推（默认）
     python tools/demo_push.py --list                  列出全部样例
@@ -7,19 +7,18 @@
 
 `--push` 必须配合 `--only N`，避免新用户一次误发全部样例。
 
-**全程不碰教务系统**：数据是编的，只调 PushPlus。改完渲染想确认没崩、
-或者第一次装完想看看推送长什么样，跑这个就够了。
+**全程不访问教务系统**：使用虚构数据，只调用 PushPlus。可用于确认显示样式，
+或在首次部署后查看推送效果。
 
-覆盖面（长安大学会发生的四种，各来一遍满分和挂科）：
+样例覆盖长安大学可能出现的四类变化，并分别提供正常成绩和不及格成绩：
 
     新增成绩 / 成绩变更 / 成绩被撤回 / 成绩重新发布
 
-第五种 `filled`（成绩已发布）没列：它要求「课程行早就在、分数栏后来才填」，
-而 CHD 的成绩是整行出现整行消失。真在出分季看到它，说明这个判断错了，
-那时候再往这里加一条。
+第五种 `filled`（成绩已发布）未列入样例：它适用于课程行已经存在、之后才填写
+分数栏的页面。长安大学目前表现为整行出现或消失，因此暂不需要该样例。
 
-`--push` 需要 PushPlus 的 token。服务器上别用 `sudo -u`（拿不到
-`/etc/jwgrade.env`），照 `deploy/setup.sh` 冒烟测试那样用 systemd-run。
+`--push` 需要 PushPlus token。服务器上不要直接使用 `sudo -u`（无法读取
+`/etc/jwgrade.env`），可参照 `deploy/setup.sh` 的部署检查方式使用 systemd-run。
 """
 from __future__ import annotations
 
@@ -99,7 +98,7 @@ PAGE_CSS = (
 
 
 # 推失败时给的排查提示。PushPlus 的 code=999 至少对应三件事，而且返回的
-# msg 一律是「服务端验证错误」——不给点方向，下次撞上还得从头推理一遍。
+# msg 通常只显示「服务端验证错误」，因此这里补充常见原因和处理方向。
 HINT = """      这一条没推成功。PushPlus 的 code=999 常见三种原因：
         - 刚推过一模一样的内容 —— 换一条，或者隔一阵子再来
         - 推太快，免费额度约每分钟 5 条 —— 加大 --gap
@@ -121,7 +120,7 @@ def write_preview(rows, out: Path) -> Path:
              '<div class="px-sub">长安大学会发生的四种消息，'
              "满分和挂科各来一遍；最后是三科依次出分和合并的对照。<br>"
              "蓝字是推送标题，白卡是 render() 的原样输出。<b>数据是编的，"
-             "不碰教务系统。</b></div>"]
+             "不访问教务系统。</b></div>"]
     for i, (desc, title, body) in enumerate(rows, 1):
         parts.append(f'<div class="px-ct">{i}. {_html.escape(desc)}</div>')
         parts.append(f'<div class="px-t">{_html.escape(title)}</div>')
@@ -133,7 +132,7 @@ def write_preview(rows, out: Path) -> Path:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="推送样例集（不碰教务系统）")
+    ap = argparse.ArgumentParser(description="推送样例集（不访问教务系统）")
     ap.add_argument("--config", default=str(REPO / "config.yaml"))
     ap.add_argument("--push", action="store_true", help="真的推到微信")
     ap.add_argument("--only", type=int, metavar="N", help="只处理第 N 条")
@@ -207,7 +206,7 @@ def main() -> int:
             # 当时 --gap 3（20 条/分钟），第 1~5 条成功、6~10 全废、到第 60 秒
             # 窗口翻篇后 11、12 又成功。默认给 15 秒 = 4 条/分钟，留一点余量。
             #
-            # 守护进程碰不到这个：每轮只发一条，两轮隔 30 分钟；真撞上了也有
+            # 守护进程通常不会触发此限制：每轮只发送一条，两轮间隔 30 分钟；即使触发也有
             # 发件箱兜着，下一轮补发时窗口早过了。
             time.sleep(args.gap)
 

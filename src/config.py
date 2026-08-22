@@ -43,8 +43,8 @@ _KEYS = {
 # 然后每分钟打一次教务系统。轮询确实不等于登录（会话能复用，登录闸另算），
 # 但每天上千次 GET 对一个学校系统仍然是很大的量。
 #
-# 300 秒不是算出来的，是个保守的挡板：真有正当理由要更快的人，改这个常量
-# 比误填一个 60 难得多——而这正是护栏该有的不对称。
+# 300 秒是保守下限。修改代码常量的门槛高于误填配置值，
+# 可以降低因配置错误产生高频请求的风险。
 MIN_INTERVAL_SECONDS = 300
 WARN_INTERVAL_SECONDS = 900
 _INTERVAL_KEYS = ("interval_seconds", "active_interval_seconds",
@@ -242,12 +242,11 @@ def interval_problem(label: str, value: int, quiet_hours=()) -> str | None:
     if value < MIN_INTERVAL_SECONDS:
         return (f"{label} 是 {value} 秒（约每天 "
                 f"{rounds_per_day(value, quiet_hours)} 轮），低于下限 "
-                f"{MIN_INTERVAL_SECONDS} 秒。教务系统是学校的，打太密可能触发"
-                f"风控——想更积极的话 {WARN_INTERVAL_SECONDS} 秒（约每天 "
-                f"{rounds_per_day(WARN_INTERVAL_SECONDS, quiet_hours)} 轮）"
-                "已经很快了")
-    log.warning("%s 是 %d 秒，约每天 %d 轮——比默认积极不少。"
-                "确认是有意为之就忽略这条。",
+                f"{MIN_INTERVAL_SECONDS} 秒。过于频繁的查询可能增加学校系统负担或触发"
+                f"安全策略；建议不要低于 {WARN_INTERVAL_SECONDS} 秒（约每天 "
+                f"{rounds_per_day(WARN_INTERVAL_SECONDS, quiet_hours)} 轮）")
+    log.warning("%s 是 %d 秒，约每天 %d 轮，明显快于默认设置。"
+                "如果这是有意设置，可以忽略本警告。",
                 label, value, rounds_per_day(value, quiet_hours))
     return None
 
@@ -257,7 +256,7 @@ def _int_problem(path: str, value, minimum: int) -> str | None:
 
     用 type(v) is int 而不是 isinstance：bool 是 int 的子类，
     isinstance(True, int) 为真且 True > 0 也成立，于是 interval_seconds: true
-    会被当成 1 秒接受——每秒打一次教务处，正好是最该避免的事。
+    会被当成 1 秒接受，从而产生每秒一次的异常请求。
     """
     if value is None:
         return None
@@ -270,7 +269,7 @@ def _bool_problem(path: str, value) -> str | None:
     """布尔校验。
 
     YAML 里 `enabled: "false"` 是字符串，而非空字符串为真——照这么写，
-    你以为把推送关了，实际它照常发。这类"写法看着对、行为正相反"的坑
+    用户可能以为已经关闭推送，但程序仍会继续发送。这类配置含义与实际行为相反的问题
     只能靠类型检查挡。
     """
     if value is None:
@@ -283,7 +282,7 @@ def _bool_problem(path: str, value) -> str | None:
 def _validate(cfg: dict, require_push: bool = True) -> None:
     """校验配置里那些填错了会静默出怪事的值。
 
-    宁可启动时就报错退出，也别等到半夜轮询时才炸——那时候你不在看日志。
+    应在启动阶段直接报错退出，避免运行一段时间后才暴露配置问题。
     """
     problems: list[str] = []
 
@@ -315,7 +314,7 @@ def _validate(cfg: dict, require_push: bool = True) -> None:
         check_int(f"schedule.{key}", sched.get(key))
     check_int("schedule.jitter_seconds", sched.get("jitter_seconds"), minimum=0)
 
-    # 三个间隔单独走，因为它们决定打学校的频率，下限比别的严
+    # 三个间隔决定请求学校系统的频率，因此使用更严格的下限。
     interval_type_error = False
     for key in _INTERVAL_KEYS:
         value = sched.get(key)
@@ -354,7 +353,7 @@ def _validate(cfg: dict, require_push: bool = True) -> None:
                     f"schedule.{fast_key} 是 {fast} 秒（{fast_label}），比"
                     f"{slow_label}的 {slow} 秒还慢。三档的意思是「越可能出分"
                     "越查得勤」，顺序必须是 加速 ≤ 常规 ≤ 省电——照现在这样，"
-                    "一出分反而会变慢，正好和设计相反")
+                    "检测到成绩变化后反而会降低检查频率")
 
     if quiet is not None and quiet != []:
         ok = (isinstance(quiet, (list, tuple)) and len(quiet) == 2

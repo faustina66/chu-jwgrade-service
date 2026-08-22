@@ -49,7 +49,7 @@ TERM_GONE_ROUNDS_TO_CONFIRM = 2
 
 
 def archive(path: Path, tag: str, why: str) -> Path:
-    """以不会撞名的名字保留状态文件。tag 只由程序内部常量提供。"""
+    """使用不会重复的文件名保留状态文件。tag 只由程序内部常量提供。"""
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     dest = path.with_name(f"{path.name}.{tag}-{stamp}-{uuid.uuid4().hex[:8]}")
     try:

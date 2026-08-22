@@ -1,9 +1,9 @@
 """轮询节奏。
 
 出分是高度集中的：期末后那几天教务处一批一批地发，平时几个月纹丝不动。
-固定间隔要么平时白白浪费请求，要么出分季拿到得太慢，所以做成三档自适应。
+固定间隔难以同时兼顾请求数量和通知时效，因此采用三档自适应频率。
 
-用离散三档而不是连续调节，是为了随时能一眼看出"现在处于哪一档、为什么"。
+使用三个离散档位而不是连续调节，便于直接判断当前档位及其切换原因。
 """
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ class AdaptiveScheduler:
         if not self.cfg.adaptive:
             return NORMAL
         now = time.time()
-        # 刚抓到变化 → 加速。启动本身不算"有动静"，否则每次重启都会白白加速。
+        # 刚检测到变化时进入加速档。启动本身不算成绩变化，避免重启增加查询频率。
         if self._last_change is not None and now - self._last_change < self.cfg.active_duration:
             return ACTIVE
         quiet_since = self._last_change or self._started

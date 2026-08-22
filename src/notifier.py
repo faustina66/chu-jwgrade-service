@@ -1,10 +1,9 @@
 """微信推送。
 
-只保留 PushPlus 一个通道。要加别的（Server酱 / ntfy / 邮件）就继承
-Notifier 实现一个 send()，再在 build() 里认一下配置，十几行的事。
+目前只提供 PushPlus 通道。如需增加 Server酱、ntfy 或邮件等通道，可继承
+Notifier 实现 send()，并在 build() 中注册相应配置。
 
-正文用 HTML 而不是 markdown：微信消息详情页本质是 webview，能渲染真 HTML。
-markdown 在手机上排版很糟——全角空格对不齐、长行乱折、绩点会被断成两行。
+正文使用 HTML，以改善微信消息详情页中的移动端排版效果。
 """
 from __future__ import annotations
 
@@ -22,11 +21,10 @@ log = logging.getLogger(__name__)
 
 
 class PushRejected(Exception):
-    """接口明确拒收，本轮别再试。
+    """接口明确拒收，本轮停止重试。
 
-    和"网络抖了一下"不是一回事，重试要么没用要么有害：
-      没用  token 错了，它不会在六秒内变对
-      有害  已经被判定"请求过多"，接着发只会让限制更久
+    此类错误不同于暂时性网络异常：token 无效时立即重试没有意义；接口已经
+    判定请求过多时，继续发送还可能延长限制时间。
 
     发件箱会在下一轮补发（约半小时后），那才是合理的重试间隔。
     """
@@ -59,7 +57,7 @@ class Notifier:
         return None
 
     def _post(self, url: str, *, retries: int = 3, **kwargs) -> bool:
-        """推送失败要重试——出分通知漏掉一条比什么都糟。
+        """推送失败时重试，尽量避免遗漏成绩通知。
 
         但只重试**可能是暂时的**那些。接口明确拒收时 _check 抛 PushRejected，
         这里立刻收手，见那个类的说明。
@@ -75,8 +73,7 @@ class Notifier:
                     return True
                 log.warning("[%s] 接口返回失败 (%d/%d): %s", self.name, attempt, retries, err)
             except PushRejected as e:
-                # 故意不带 (n/3)：那个格式看着像网络抖动，会让人"再等等看"，
-                # 而这条要的是让你一眼知道"重试没用，去改配置"。
+                # 不显示 (n/3)，以免被误认为暂时性网络异常；此处需要用户检查配置。
                 log.error("[%s] 接口拒收，已停止重试。%s", self.name, e)
                 return False
             except requests.RequestException as e:
@@ -92,14 +89,13 @@ class PushPlus(Notifier):
     # 保守取值；成绩单超长会在渲染层按学期拆条，这里只是最后一道保险。
     MAX_BODY = 9000
 
-    # 这几个码重试没用甚至有害。值会原样进日志和告警，所以写成"该干什么"。
+    # 下列错误不适合立即重试。提示内容会写入日志和告警，因此同时给出处理方法。
     # 官方返回码表：pushplus.plus/doc/guide/code.html
     FATAL: ClassVar[dict[str, str]] = {
-        "900": "账号被判定请求过多而受限。**别接着发**——官方明确说可以据此"
-               "判断是否还该继续调用。等它自己解除，发件箱下一轮再补。",
-        "903": "token 无效（不是额度用完，那是 900）。去 pushplus.plus 重新"
-               "复制 token，写进 /etc/jwgrade.env 的 PUSHPLUS_TOKEN，重启服务。"
-               "等多久都不会自己好。",
+        "900": "账号因请求过多而受到限制，请停止继续发送。等待限制解除后，"
+               "发件箱会在下一轮重新尝试。",
+        "903": "token 无效。请前往 pushplus.plus 重新复制 token，将其写入 "
+               "/etc/jwgrade.env 的 PUSHPLUS_TOKEN，然后重启服务。此问题无法通过等待自动恢复。",
         "905": "账号还没实名认证，去 pushplus.plus 完成认证。",
         "401": "接口未授权，检查 pushplus 后台是否开启了开放接口。",
         "403": "请求 IP 未授权，检查 pushplus 后台的 IP 白名单。",
@@ -116,8 +112,8 @@ class PushPlus(Notifier):
             return f"响应不是 JSON：{r.text[:200]}"
         if not isinstance(data, dict):
             # 接口异常时返回过 list 和 null。直接 .get() 会抛 AttributeError，
-            # 而那是从 send() 里窜出去的异常，不是"返回 False"——
-            # 调用方拿不到"推送失败"这个结论，整轮就崩了。
+            # 否则异常会从 send() 直接抛出，调用方无法得到明确的失败结果，
+            # 并可能导致本轮任务中断。
             return f"响应不是对象：{str(data)[:200]}"
         code = str(data.get("code"))
         if code in self.FATAL:
@@ -181,10 +177,8 @@ _CSS = (
     # 现状；哪天出现串色，第一嫌疑就是这里，改法是给类名加前缀
     # （.jwl / .jwe …），代价是每门课多十几字节。
     #
-    # 2026-08-19 真机推翻了一个旧判断。原来写的是「`b{}` 是有意保留的例外：
-    # 公众号认它，小程序忽略它，**代价为零**」——代价不是零。小程序里那些
-    # 蓝色数字全变成了黑的，只有「空」（`.e`，是个类）还蓝着，一张卡看着
-    # 半生不熟。**推理说"没人看得出来"，真机一测就现了原形。**
+    # 实际设备测试表明，小程序会忽略 `b{}`，导致蓝色数字变成黑色，
+    # 只有使用类选择器的「空」仍保持蓝色，因此数值需要统一使用 `.v`。
     #
     # 所以数值改挂 `.v`。每门课多约 64 字节，一条消息能装的门数从 10 掉到 9
     # ——正常出分一轮就一两门，够不着。`b{}` 那条留着当兜底，一次性开销，
@@ -321,8 +315,7 @@ def _low_gpa(g) -> bool:
 def _detail(g, fail: bool = False) -> str:
     """六项分数明细。取自抓取时留存的原始表格行，缺的显示"空"。
 
-    挂科时整行转红，**连"空"一起**：这门课整体是坏消息，留一半蓝的会让人
-    误以为其中几项还算好看。
+    挂科时整行转红，包括显示为"空"的项目，避免不同颜色造成误解。
     """
     cells = []
     for col in DETAIL_COLUMNS:
@@ -340,7 +333,7 @@ def _detail(g, fail: bool = False) -> str:
     #
     # 这是权衡后的选择：display:inline-block / flex / grid 在小程序里都会被
     # 砍掉，表格是唯一"降级之后仍然对齐"的手段。剩下的风险是小程序万一连
-    # <table> 标签一起砍——那六项会糊成一坨。公众号那边实测没问题。
+    # <table> 标签一起移除，六项内容可能会挤在一起。公众号端已验证正常。
     rows = [cells[i:i + PER_ROW] for i in range(0, len(cells), PER_ROW)]
     body = "".join(
         "<tr>" + "".join(f"<td>{c}</td>" for c in row) + "</tr>"
@@ -413,7 +406,7 @@ def _ident(g, score_cell: str, with_term: bool = True,
 
 def _title(changes: list[Change]) -> str:
     withdrawals = [c for c in changes if c.is_withdrawal]
-    # 撤回是坏消息，别被裹在"出分啦"里推送出去
+    # 撤回需要单独提示，不能使用普通出分通知的标题。
     if len(withdrawals) == len(changes):
         if len(changes) == 1:
             return f"⚠️ {changes[0].grade.course_name} 成绩被撤回"
@@ -439,8 +432,8 @@ def _kind_line(c: Change) -> str:
     `.k`（0,0,1,0），写成 `<p class="k">` 颜色会被打回黑色。`.h`/`.c` 也是
     出于同样的原因用 div。
 
-    红色只留给真的坏消息：撤回，以及**改完之后没及格**的变更。
-    改分本身不分好坏——补考涨上来也是"成绩变更"，那种再标红就是虚惊一场。
+    红色只用于撤回，以及修改后仍未及格的成绩。
+    成绩修改本身不代表异常，例如补考后成绩提高时不应标红。
     """
     bad = c.kind == "withdrawn" or (c.kind == "changed" and _is_failing(c.grade))
     return f'<div class="{"kw" if bad else "k"}">{_esc(c.label)}</div>'

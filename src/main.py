@@ -46,15 +46,15 @@ class CheckResult:
 
     光返回 changes 不够：推送失败时它同样是一串变化，调用方分不出
     "这轮很顺利" 和 "变化检出来了但一条都没发出去"。后者必须计入连续失败，
-    否则推送通道坏掉之后，日志上永远是一片岁月静好。
+    否则推送通道失效后，日志仍可能显示为正常状态。
     """
     changes: list
     delivered: bool = True
     total: int = 0            # 本轮实际抓到多少门课，报平安时用得上
 
-# 退出码。systemd 靠它区分"重试有意义"和"重试只会更糟"：
-#   20 登录失败（密码错、账号锁定、要验证码）—— 再试只会把账号试死
-#   21 配置或凭据缺失 —— 人不改配置，重启一万次也一样
+# 退出码用于帮助 systemd 判断错误是否适合自动重试：
+#   20 登录失败（密码错误、账号锁定或需要验证码），继续重试可能导致账号被锁定
+#   21 配置或凭据缺失，需要人工修正后才能恢复
 EXIT_LOGIN_FAILED = 20
 EXIT_CONFIG_ERROR = 21
 
@@ -161,7 +161,7 @@ def _push_critical(notifiers: list, title: str, body: str,
     RestartPreventExitStatus 认这个码，服务不会再被拉起来。这条消息没送到，
     监控就永久死在那儿，而你看到的现象是"最近没出分"——和一切正常一模一样。
 
-    PushPlus 免费额度 200 条/天，用完了正好就是这个下场，并不罕见。
+    PushPlus 每日额度用完后也可能导致这类问题。
     """
     i = 0
     while attempts is None or i < attempts:
@@ -301,14 +301,14 @@ def _maybe_heartbeat(beat, notifiers: list, res: CheckResult) -> None:
     """长时间没给你发过任何东西时，主动报个平安。
 
     有真实变化就只是把计时器归零：出分季本来消息就够多了，
-    再加一条"我还活着"纯属噪音。
+    此时无需再发送重复的存活通知。
     """
     # 有变化时不用在这儿归零：check_once 里那次 _push 成功后已经归零了。
     if res.changes or not beat.due():
         return
-    body = (f"监控正常运行中，已盯住 {res.total} 门课程；"
+    body = (f"监控正常运行中，当前记录 {res.total} 门课程；"
             f"最近 {beat.days} 天没有新成绩。"
-            "收到这条说明服务活着——没收到才该去看一眼。")
+            "收到这条消息表示服务运行正常；如果到期未收到，请检查服务状态。")
     _push(notifiers, "✅ 教务监控正常", body)     # 送达则由 _push 自己归零
 
 
@@ -325,8 +325,8 @@ def main() -> int:
     """最外层退出码映射。
 
     分三类，systemd 靠它决定要不要拉起来重试：
-      EXIT_LOGIN_FAILED  密码错、账号锁定、要验证码 —— 重试只会把账号试死
-      EXIT_CONFIG_ERROR  配置或凭据缺失 —— 人不改，重启一万次也一样
+      EXIT_LOGIN_FAILED  密码错误、账号锁定或需要验证码，继续重试可能锁定账号
+      EXIT_CONFIG_ERROR  配置或凭据缺失，需要人工修正后才能恢复
       1 / 其它           网络抖动之类的临时故障 —— 重试有意义
 
     必须在这里统一收口：--once 模式下 LoginFailed 会一路抛到顶层，
@@ -340,7 +340,7 @@ def main() -> int:
     except (config.ConfigError, FileNotFoundError, SnapshotVersionUnsupported,
             outbox.OutboxVersionUnsupported, LoginBlockError,
             LoginRateStateError, SessionStoreError) as e:
-        # 配置问题不是程序崩溃，别拿 traceback 糊用户一脸
+        # 配置问题不是程序崩溃，不向用户直接显示难以理解的异常堆栈。
         print()
         print(e)
         print()
@@ -362,7 +362,7 @@ def _run() -> int:
     ap.add_argument("--report", action="store_true",
                     help="把当前快照里的完整成绩单推到微信")
     ap.add_argument("--demo", action="store_true",
-                    help="用假数据模拟一次出分通知，看当前 detail_level 的实际效果")
+                    help="使用虚构数据模拟一次成绩通知，查看当前 detail_level 的显示效果")
     ap.add_argument("--dump", action="store_true", help="保存成绩页原始 HTML")
     ap.add_argument("--set-password", action="store_true", help="把密码存进系统密钥链")
     ap.add_argument("--clear-password", action="store_true", help="从密钥链删除密码")
@@ -468,7 +468,7 @@ def _run() -> int:
         return 0 if _push(notifiers, "✅ 教务监控测试", "推送通道正常，可以开始监控了。") else 1
 
     if args.demo:
-        # 不碰快照、不碰教务系统，纯粹让你看清当前配置推出来长什么样。
+        # 不修改快照，也不访问教务系统，仅用于查看当前配置的推送效果。
         level = cfg.get("notify", {}).get("detail_level", "full")
         title, body = notifier.render([Change("new", demo_grade())], level)
         print()
@@ -480,7 +480,7 @@ def _run() -> int:
         return 0 if _push(notifiers, title, body) else 1
 
     if args.report:
-        # 读快照而不是重新抓取：不碰教务系统，服务停着也能用
+        # 读取快照而不是重新抓取，因此不访问教务系统，服务停止时也可使用。
         snapshot = GradeStore(
             storage.get("snapshot_path", "data/grades.json"),
             adapter_name, username).load()
@@ -541,12 +541,12 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
         try:
             acct["password"], source = credentials.resolve(username, acct.get("password", ""))
         except ValueError as e:
-            # 配置问题不是程序崩溃，别拿 traceback 糊用户一脸
+            # 配置问题不是程序崩溃，不向用户直接显示难以理解的异常堆栈。
             print(f"\n{e}\n")
             return EXIT_CONFIG_ERROR
         log.info("密码来源：%s", source)
-        # 密码错了就别再试。cron 和 Windows 任务计划程序不看退出码，
-        # 每 15 分钟拿错密码撞一次，一天 96 次，够把统一身份认证锁死。
+        # 密码错误后停止自动重试。cron 和 Windows 任务计划程序可能不处理退出码，
+        # 定时任务反复提交错误密码可能导致统一身份认证账号被锁定。
         try:
             block.check(acct["password"])
         except LoginBlocked as e:
@@ -570,9 +570,9 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
     if auth_required and adapter_session is not None:
         restored = sessions.restore(adapter_session)
         if restored and adapter.resume_from_cookies():
-            # 教务系统的会话看着还活着，直接跳过登录，让第一次抓取去验证。
+            # 会话可能仍然有效，先跳过登录，再由第一次抓取验证。
             # 不这么做的话，重启仍然要走一遍换票——而完整登录一天只有一次
-            # 额度，白白消耗掉的话当天再重启就登不进去了。
+            # 额度；不必要的认证会减少当天剩余的登录机会。
             log.info("已恢复上次的登录会话（%d 条 cookie），本轮不重新登录",
                      restored)
         elif restored:
@@ -648,7 +648,7 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
             return 1
         except LoginFailed as e:
             # 常驻模式在循环里处理；--once 以前是一路抛到 main() 只记个日志，
-            # 既不告警也不阻止下一次定时任务继续拿错密码去撞。
+            # 既不告警，也无法阻止下一次定时任务继续提交错误密码。
             log.error("登录失败，停止运行：%s", e)
             safe_reason = _persist_login_failure(
                 block, auth_required, acct.get("password", ""), str(e), notifiers,
@@ -700,7 +700,7 @@ def _run_monitor(args, cfg: dict, username: str, storage: dict,
             # systemd 会按 RestartPreventExitStatus 停止，等待程序升级。
             raise
         except LoginFailed as e:
-            # 密码错误/账号锁定重试也没用，直接告警退出，免得把账号试锁死。
+            # 密码错误或账号锁定时继续重试没有意义，直接告警退出以保护账号。
             # 退出码必须是 EXIT_LOGIN_FAILED：systemd 的 RestartPreventExitStatus
             # 认的就是它，返回 1 的话服务照样被拉起来重试，等于没防。
             log.error("登录失败，停止运行：%s", e)

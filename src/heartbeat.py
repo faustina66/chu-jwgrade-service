@@ -41,7 +41,7 @@ class Heartbeat:
             os.close(os.open(self.path, os.O_WRONLY | os.O_CREAT, 0o600))
             os.utime(self.path, None)
         except OSError as e:
-            # 报平安失灵不该影响主流程，记一笔就够了
+            # 心跳通知失败不应影响主流程，只记录日志。
             log.warning("无法更新存活标记 %s：%s", self.path, e)
 
     def due(self) -> bool:
@@ -51,7 +51,7 @@ class Heartbeat:
         try:
             last = self.path.stat().st_mtime
         except OSError:
-            # 首次运行：先把计时器起个头，别一上来就报平安
+            # 首次运行仅初始化计时器，不立即发送心跳通知。
             self.note_push()
             return False
         return (time.time() - last) >= self.days * 86400

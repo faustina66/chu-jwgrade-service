@@ -40,7 +40,7 @@ class SessionStore:
     def __init__(self, path: str | Path, username: str = ""):
         self.path = Path(path)
         # 快照和发件箱都绑了学号，这份更该绑：里面是活的 CAS 会话，
-        # 换账号后把旧 cookie 装回去，等于用别人的身份去查成绩。
+        # 更换账号后不能恢复旧 cookie，否则可能以原账号身份查询成绩。
         self.account = account_fingerprint(username)
 
     def save(self, session: requests.Session) -> None:

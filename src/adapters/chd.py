@@ -3,7 +3,7 @@
 登录链路：ids.chd.edu.cn 统一身份认证（金智 authserver / CAS）
           -> 带 ticket 回跳 -> bkjw.chd.edu.cn/eams 建立 session。
 
-密码加密算法照抄登录页的 encrypt.js：
+密码加密算法与登录页的 encrypt.js 保持一致：
     base64( AES-CBC(key=pwdEncryptSalt, iv=随机16字符, 随机64字符 + 明文密码) )
 前面那 64 个随机字符是盐，服务端会丢弃；没有它同一个密码每次密文都相同。
 """
@@ -118,7 +118,7 @@ class ChdAdapter(Adapter):
         super().__init__(cfg)
         self.service = cfg.get("service_url") or f"{EAMS}/home.action"
         self.debug_dump = bool(cfg.get("debug_dump"))
-        # dump 的落点由上层给，别按当前工作目录解析：这份文件里有姓名、学号
+        # dump 的保存位置由上层指定，不能按当前工作目录解析：这份文件里有姓名、学号
         # 和全部成绩，落在哪必须是确定的。上层传的是状态目录，和快照同一处。
         self.dump_dir = Path(cfg.get("state_dir") or "data")
         self.semester_id = str(cfg.get("semester_id") or "").strip()
@@ -221,14 +221,14 @@ class ChdAdapter(Adapter):
             allow_redirects=False,      # 跳转要自己跟，见 _follow()
         )
         # 认证失败时 CAS 回什么状态码，各校配置不同。**长安大学实测
-        # （2026-08-22 真机装机）密码错误回的是 401，不是 200。**
+        # 实际测试中，密码错误返回 401，而不是 200。
         #
         # 老代码只在 200 分支里做分类，401 直接落到 raise_for_status()，
         # 抛出原始 HTTPError —— 于是退出码是 1 而不是 20，后果一串：
         #   · setup.sh 的三次重试只认 20，完全不触发
         #   · 微信告警发不出去（未捕获异常在推送之前就逃走了）
         #   · 阻断标记停在 armed（「结果没能确认」），而实际结果是明确的
-        #   · systemd 的 RestartPreventExitStatus 不含 1，会白白重启一轮
+        #   · systemd 的 RestartPreventExitStatus 不包含 1，会额外重启一次
         if resp.status_code in (200, 401, 403):
             # 正文里认得出的提示优先——只有它能区分「密码错」和「验证码 / 锁定」
             self._raise_for_login_error(resp.text)
@@ -319,7 +319,7 @@ class ChdAdapter(Adapter):
             log.debug("验证码探测异常，忽略: %s", e)
             return
         # 合法 JSON 也可能不是对象——接口异常时返回过 null 和数组，那时
-        # .get() 会抛 AttributeError 一路窜出去，把整轮拖崩。
+        # 否则 .get() 会抛出 AttributeError，导致本轮任务中断。
         # 显式判类型而不是加宽上面那个 except：加宽会连自己写错的
         # AttributeError 一起吞掉，那正是上面那段注释拒绝的事。
         if not isinstance(data, dict):
@@ -452,7 +452,7 @@ class ChdAdapter(Adapter):
         soup = BeautifulSoup(html, "lxml")
         collected: dict[str, Grade] = {}
         incomplete: list[str] = []      # 缺身份列被跳过的
-        duplicated: list[str] = []      # 键撞车被丢掉的
+        duplicated: list[str] = []      # 主键重复而被丢弃的
 
         # 老 Struts2 页面爱用表格套表格做布局。外层表的 find_all("th") 会把内层
         # 所有表头一起捞出来，拼成一份错位的列映射。
@@ -460,7 +460,7 @@ class ChdAdapter(Adapter):
         # **只处理叶子表，外层的整个跳过。** 原来是"排在后面但照样处理"，
         # 那在多张内层表时侥幸没出事（错位表头过不了列定位那关），可页面上
         # 只有一张成绩表时，外层表捞到的表头恰好完整、行也是同一批——同一门
-        # 课被解析两次，撞上重复检查，整轮抛异常。2026-08-20 实测复现。
+        # 同一课程可能被解析两次并触发重复检查，导致本轮任务异常退出。
         #
         # 外层表里的数据本来就是内层表的，处理它没有任何收益，只有风险。
         tables = [t for t in soup.find_all("table") if t.find("table") is None]
@@ -493,8 +493,8 @@ class ChdAdapter(Adapter):
                 term, course_id = pick(cells, "term"), pick(cells, "course_id")
                 if not term or not course_id:
                     # 这两列拼起来就是 Grade.key —— 变化比对的身份依据。缺一个，
-                    # 所有缺的行会撞成同一个键、只留第一条：27 门变 1 门，下一轮
-                    # 看起来像 26 门集体撤回。宁可少一行，也不能让它们撞。
+                    # 所有缺失标识的行可能生成同一个键，最终只保留第一条，使下一轮
+                    # 误判为大量课程被撤回。与其合并错误数据，不如跳过无法识别的行。
                     incomplete.append(name)
                     continue
                 g = Grade(
@@ -513,11 +513,11 @@ class ChdAdapter(Adapter):
                     continue
                 collected[g.key] = g
 
-        # 结构不对就整轮不采信，别拿一份自己都不信的数据去更新快照。
+        # 页面结构异常时不采信本轮结果，避免使用不可靠数据更新快照。
         #
         # 原来这里是"跳过 + 警告"。但跳过本身会制造假象：缺身份列的行从快照里
-        # 消失 → 被当成撤回；撞键的行被丢掉 → 同样被当成撤回。于是你收到的是
-        # 一条**看起来很正常的撤回通知**，而真实原因是页面结构变了。
+        # 行消失或键重复导致记录被丢弃时，都可能被误判为撤回，因此这里必须
+        # 拒绝整轮结果。否则用户可能收到看似正常的撤回通知，而真实原因只是页面结构变化。
         #
         # 极端情况本来就有兜底（解析出 0 条会在上面抛 RuntimeError），没管的
         # 是部分损坏：少数几行坏掉、其余照常入库，正好落在各道异常闸的下面。
@@ -539,7 +539,7 @@ class ChdAdapter(Adapter):
         if problems:
             raise RuntimeError(
                 "成绩页结构和预期不符，本轮不采信：" + "；".join(problems)
-                + "。这两列拼起来是变化比对的身份依据，缺了或撞了都会让不同的课"
+                + "。这两列共同构成变化比对的唯一标识，缺失或重复都可能让不同课程"
                 "混成一门，进而推出假的撤回通知。多半是教务处改版了——"
                 "加 --dump 重跑一次可以存下原始页面。")
         return list(collected.values())

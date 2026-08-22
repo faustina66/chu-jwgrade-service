@@ -25,11 +25,8 @@ SVC_USER=jwgrade
 
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
-# 凭据一律不回显，但**回读**一遍能验证的信息。只报长度和形状、绝不报内容：
-# 终端会被截图，这个项目从头到尾按这个前提做。
-#
-# 光是字符数就能当场抓住「粘漏了半截」「少按一个键」——2026-08-22 真机装机
-# 输了个 7 位的密码，因为看不见，一直到事后数长度才发现。
+# 密码和 token 均不回显，只显示字符数量；token 还会检查基本格式。
+# 这样可以发现输入不完整等问题，同时避免凭据出现在终端截图中。
 say_len() { printf '  已记录：%d 个字符\n' "${#1}"; }
 
 # 密码：只回读长度
@@ -38,8 +35,7 @@ read_password() {
   say_len "$JW_PASSWORD"
 }
 
-# token：多验一层形状。PushPlus 的 token 是 32 位十六进制，形状不对就当场问，
-# 能抓住「粘漏半截」「把用户名粘进来」「粘成一整条 URL」这几种。
+# PushPlus token 通常是 32 位十六进制；格式不符时询问是否重新输入。
 read_token() {
   local t retry
   while :; do
@@ -53,7 +49,7 @@ read_token() {
       echo "，格式符合（32 位十六进制）"
       break
     fi
-    echo " —— PushPlus 的 token 通常是 32 位十六进制，这个看着不像。"
+    echo "。PushPlus token 通常是 32 位十六进制，当前输入格式不符合。"
     read -rp "  要重新输入吗？[Y/n]: " retry
     if [[ "$retry" =~ ^[Nn]$ ]]; then break; fi
   done
@@ -91,7 +87,7 @@ sudo apt-get install -y -qq python3 python3-venv python3-pip
 
 # ---------------------------------------------------------------- Python 版本
 # src/config.py 顶层 `from itertools import pairwise` 要 3.10+。不在这儿拦的话，
-# apt / venv / pip 三步都会成功，然后冒烟测试炸在一句 ImportError——看着像程序
+# apt / venv / pip 三步可能全部成功，但运行检查仍会因 ImportError 失败，容易被误判为程序
 # 坏了，其实是发行版自带的 python3 太老。Ubuntu 20.04 是 3.8，Debian 11 是 3.9。
 PY_VER="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
 if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
@@ -160,7 +156,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 else
   # 不静默跳过：改了教务密码的人重跑本脚本，就是为了换掉它。
   # 原来的提示让人去 sudo rm 凭据文件——那个指引本身就吓人，而且删完
-  # PushPlus token 也得重敲一遍。
+  # 避免要求用户再次输入 PushPlus token。
   echo "凭据文件 $ENV_FILE 已存在。"
   read -rp "要重新输入教务密码吗？（在教务系统改过密码就选 y）[y/N]: " CHANGE_PW
   if [[ "$CHANGE_PW" =~ ^[Yy]$ ]]; then
@@ -178,9 +174,8 @@ else
     echo "保持不变。"
   fi
 
-  # token 为空时必须重问。config.yaml 里 pushplus.enabled 默认是 true，
-  # 带着空 token 跑冒烟测试必然退 21，而上面那段只重问密码、token 原样保留——
-  # 于是重跑脚本永远修不好。2026-08-22 真机装机时撞进过这个死循环。
+  # token 为空时重新询问。config.yaml 里 pushplus.enabled 默认是 true，
+  # 空 token 会导致配置检查失败，因此不能直接沿用。
   if ! sudo grep -qE '^PUSHPLUS_TOKEN=.+' "$ENV_FILE"; then
     echo
     echo "凭据文件里的 PushPlus token 是空的。"
@@ -232,8 +227,8 @@ WorkingDirectory=${PROJECT_DIR}
 EnvironmentFile=${ENV_FILE}
 ExecStart=${VENV}/bin/python -m src.main
 # on-failure + RestartPreventExitStatus：程序遇到密码错误会主动退出（码 20）
-# 以避免反复登录把账号试锁死。用 Restart=always 会让 systemd 每 60 秒把它
-# 拉起来重试一次，等于亲手拆掉这个保险丝。
+# 以避免重复登录导致账号被锁定。使用 Restart=always 会让 systemd 每 60 秒
+# 重新尝试一次，从而绕过这项保护。
 Restart=on-failure
 RestartSec=60
 RestartPreventExitStatus=20 21
@@ -262,22 +257,10 @@ EOF
 
 sudo systemctl daemon-reload
 
-# ---------------------------------------------------------------- 冒烟测试
-# 装机时密码还没被验证过，打错一次很正常。而正式配置里两道登录闸都是 1，
-# 打错一次就得等一小时（小时闸）加一天（日闸）——对新手，这是整个安装过程
-# 最容易卡死的地方，而且卡住时的报错他多半看不懂。
-#
-# 所以冒烟测试用一份**临时配置副本**，只把两道闸放宽到够试 3 次，其余照抄。
-# 正式的 config.yaml 从头到尾不动，服务启动用的还是它。
-#
-# 为什么用副本而不是"改了再改回来"：后者一旦中途被 Ctrl+C 或 kill，宽松档
-# 就留在正式配置里了，而人不会知道。副本没有这个问题——没有东西需要收回，
-# 删掉临时文件就完了，正式配置压根没被碰过。
-#
-# 装完之后防护回到和平时完全一样：一小时一次、一天一次。这样是站得住的，
-# 因为**第一次登录成功就等于证明了这个密码是对的**——之后会话过期走换票、
-# 换票也过期才提交密码，而那时用的是已经验证过的密码，必然一次成功。
-# "需要多试几次"这个需求，一辈子只存在于装机那一刻。
+# ---------------------------------------------------------------- 部署检查
+# 首次部署时密码尚未验证，因此部署检查使用临时配置副本，最多允许三次输入。
+# 正式 config.yaml 不会被修改，服务启动后仍使用默认的一小时一次、一天一次限制。
+# 使用临时副本可以避免脚本被中断后把宽松配置遗留在正式文件中。
 SETUP_CFG="${PROJECT_DIR}/.config.setup.yaml"
 trap 'sudo rm -f "$SETUP_CFG"' EXIT
 
@@ -298,14 +281,13 @@ sudo cp "${PROJECT_DIR}/config.yaml" "$SETUP_CFG"
 # 一天封顶 9 次。这个节奏也更贴近 CAS 账号锁定真正在意的东西（短时间内
 # 连续失败），而不是让人一次烧完三次再锁一整天。
 #
-# 9 次听着多，但装机时人就坐着一次次手敲密码、程序压根没在跑——这是人力
-# 上限，不是机器在撞。而且临时副本一删就回到 1 / 1。
+# 每天九次只用于人工完成首次部署。临时副本删除后，限制会恢复为 1 / 1。
 sudo sed -i 's/^  max_logins_per_hour: .*/  max_logins_per_hour: 5/' "$SETUP_CFG"
 sudo sed -i 's/^  max_password_logins_per_day: .*/  max_password_logins_per_day: 9/' "$SETUP_CFG"
 sudo chown root:"$SVC_USER" "$SETUP_CFG"
 sudo chmod 640 "$SETUP_CFG"
 
-# 上一次登录失败会留下阻断标记，带着它跑冒烟测试必然失败。而 LoginBlocked
+# 上一次登录失败会留下阻断标记，保留该标记会使部署检查直接失败。LoginBlocked
 # 映射到退出码 21，下面的重试循环只认 20，所以那种失败连重试都不会触发。
 #
 # 这里无条件跑一次解锁：没有标记时它是空操作；有标记且密码确实换过就解开；
@@ -348,7 +330,7 @@ DONE_TRIES=0
 for (( TRY = 1; TRY <= SMOKE_ATTEMPTS; TRY++ )); do
   DONE_TRIES=$TRY
   set +e
-  # 不带 --dump：冒烟测试只需要知道能不能跑通，没必要在磁盘上留一份
+  # 不带 --dump：部署检查只需确认流程是否正常，无需在磁盘上保留
   # 含姓名、学号和全部成绩的原始 HTML。解析出问题时再手动加 --dump。
   # 直接让 systemd 解析 EnvironmentFile，避免这里手写的 shell 解析规则
   # 和正式服务对引号、反斜杠、# 等特殊字符的解释不一致。--pipe 只把输出
@@ -362,13 +344,13 @@ for (( TRY = 1; TRY <= SMOKE_ATTEMPTS; TRY++ )); do
     "$VENV/bin/python" -m src.main --once --config "$SETUP_CFG"
   RESULT=$?
   set -e
-  # 冒烟测试以 root 跑，产生的文件属主是 root，服务用户会写不动
+  # 确保已有状态文件统一归服务用户所有，兼容旧版本或人工运行留下的文件。
   sudo chown -R "$SVC_USER":"$SVC_USER" "${PROJECT_DIR}/data"
 
   if [[ $RESULT -eq 0 ]]; then
     break
   fi
-  # 只有「密码错」值得重来。配置写错、页面改版这些，重试多少次都一样。
+  # 只有密码错误适合重新输入。配置错误或页面结构变化无法通过重复尝试解决。
   if [[ $RESULT -ne 20 ]]; then
     break
   fi
@@ -377,9 +359,9 @@ for (( TRY = 1; TRY <= SMOKE_ATTEMPTS; TRY++ )); do
   fi
 
   echo
-  echo "登录没通过，多半是密码打错了。还可以再试 $(( SMOKE_ATTEMPTS - TRY )) 次。"
+  echo "登录未通过，可能是密码输入错误。还可以再试 $(( SMOKE_ATTEMPTS - TRY )) 次。"
   read_password "重新输入教务系统密码: "
-  # 只换密码，PushPlus token 原样保留——没必要让人把两样都重敲一遍
+  # 只更新密码，PushPlus token 保持不变，避免重复输入。
   ENV_KEEP="$(sudo grep -v '^JW_PASSWORD=' "$ENV_FILE" || true)"
   {
     printf 'JW_PASSWORD=%s\n' "$JW_PASSWORD"
@@ -405,7 +387,7 @@ for (( TRY = 1; TRY <= SMOKE_ATTEMPTS; TRY++ )); do
   if [[ $UNLOCKED -ne 0 ]]; then
     cat <<EOF
 
-解除登录阻断失败，多半是这次输的和上次是同一个密码。
+解除登录阻断失败，当前输入可能与上次失败时使用的密码相同。
 先去 https://ids.chd.edu.cn 手动登录确认正确的密码，再重跑本脚本。
 EOF
     exit $UNLOCKED
@@ -422,18 +404,18 @@ EOF
     # 说 $DONE_TRIES 而不是上限：真被小时闸提前拦住时，实际试的次数会更少，
     # 报一个没发生过的数就是在骗人。
     cat <<EOF
-这一轮试了 ${DONE_TRIES} 次密码都没通过。先去 https://ids.chd.edu.cn 手动登录确认密码。
-确认之后重跑本脚本——这一小时的额度已经用完，等约一小时再来。
-一天最多试 9 次，用完就得等到明天。
+本轮 ${DONE_TRIES} 次密码尝试均未通过。请先前往 https://ids.chd.edu.cn 手动确认密码。
+确认后再重新运行本脚本。当前一小时内的尝试次数已用完，请等待约一小时。
+每天最多允许尝试 9 次；达到上限后，请等待次日额度恢复。
 EOF
   fi
   exit $RESULT
 fi
 
 say "启动常驻服务"
-# 冒烟测试通过之后才登记开机自启。放在前面的话，冒烟测试失败会直接 exit，
-# 留下一个「现在没起来、但下次开机自己起来」的状态——而那一起来就是一次
-# 完整登录，人还不在场。失败的操作不该留下只有成功才该留下的状态。
+# 部署检查通过后才登记开机自启。如果提前登记，检查失败并退出时，
+# 可能留下当前未运行、但下次开机自动启动的状态，并在无人关注时发起认证。
+# 因此，只有部署检查成功后才启用开机自启。
 sudo systemctl enable "$SERVICE" >/dev/null
 sudo systemctl restart "$SERVICE"
 sleep 2
@@ -450,5 +432,5 @@ cat <<EOF
   （cd 不能省：-m src.main 按当前目录找 src 包，sudo -u 不改工作目录）
 
 改轮询频率直接编辑 ${PROJECT_DIR}/config.yaml，保存即生效，不用重启。
-服务异常时先看 status 和 journal，不要反复 restart，以免重新触发认证。
+服务异常时先查看状态和日志，不要反复重启，以免重新触发认证。
 EOF

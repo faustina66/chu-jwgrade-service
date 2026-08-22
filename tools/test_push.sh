@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 部署完成后的安全冒烟测试：只推送一条虚构成绩，不访问教务系统。
+# 部署完成后的安全推送测试：只发送一条虚构成绩，不访问教务系统。
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICE_USER="${JWGRADE_SERVICE_USER:-jwgrade}"
 ENV_FILE="${JWGRADE_ENV_FILE:-/etc/jwgrade.env}"
