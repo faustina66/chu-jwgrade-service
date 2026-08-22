@@ -26,6 +26,25 @@
 - 复用登录会话，减少重复登录；
 - 支持 Linux 常驻运行。
 
+## 仓库结构
+
+| 名称 | 用途 |
+|---|---|
+| [`.github/`](.github/) | GitHub Issue 模板等仓库配置。普通用户部署时不需要修改。 |
+| [`deploy/`](deploy/) | 云服务器部署脚本，负责安装依赖、生成配置和注册系统服务。 |
+| [`docs/`](docs/) | 新用户部署指南、日常维护说明和推送效果图片。 |
+| [`src/`](src/) | 程序核心代码，包括登录、成绩抓取、变化比对、定时检查和消息推送。 |
+| [`tools/`](tools/) | 推送测试工具，用于检查 PushPlus 通道和手机页面显示效果。 |
+| [`.gitattributes`](.gitattributes) | 规定仓库文件的换行格式，避免 Shell 脚本在 Linux 上因行尾格式出错。 |
+| [`.gitignore`](.gitignore) | 指定不上传到 GitHub 的本地文件，例如密码配置、成绩快照、Cookie 和日志。 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 记录各版本包含的功能、修改内容和已知限制。 |
+| [`config.example.yaml`](config.example.yaml) | 配置文件模板。部署脚本会根据它生成实际使用的 `config.yaml`。 |
+| [`LICENSE`](LICENSE) | 项目许可证，说明允许和禁止的使用方式。 |
+| [`README.md`](README.md) | 项目首页，介绍功能、仓库结构、使用入口和注意事项。 |
+| [`requirements.txt`](requirements.txt) | 项目直接使用的 Python 依赖及其版本。 |
+| [`requirements.lock.txt`](requirements.lock.txt) | Linux 部署使用的完整依赖版本清单，部署脚本会优先安装它。 |
+| [`SECURITY.md`](SECURITY.md) | 安全使用说明，以及发现安全问题后的报告方式。 |
+
 ## 开始使用
 
 这是一个需要自行部署的 Linux 服务，只使用你本人的账号，并运行在你自己的服务器上。
