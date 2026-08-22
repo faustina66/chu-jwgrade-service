@@ -220,10 +220,30 @@ class ChdAdapter(Adapter):
             timeout=20,
             allow_redirects=False,      # 跳转要自己跟，见 _follow()
         )
-        # 登录不通过时 CAS 不报错，而是回 200 重新渲染一遍登录页
-        if resp.status_code == 200:
+        # 认证失败时 CAS 回什么状态码，各校配置不同。**长安大学实测
+        # （2026-08-22 真机装机）密码错误回的是 401，不是 200。**
+        #
+        # 老代码只在 200 分支里做分类，401 直接落到 raise_for_status()，
+        # 抛出原始 HTTPError —— 于是退出码是 1 而不是 20，后果一串：
+        #   · setup.sh 的三次重试只认 20，完全不触发
+        #   · 微信告警发不出去（未捕获异常在推送之前就逃走了）
+        #   · 阻断标记停在 armed（「结果没能确认」），而实际结果是明确的
+        #   · systemd 的 RestartPreventExitStatus 不含 1，会白白重启一轮
+        if resp.status_code in (200, 401, 403):
+            # 正文里认得出的提示优先——只有它能区分「密码错」和「验证码 / 锁定」
             self._raise_for_login_error(resp.text)
-            raise LoginTransient("登录未通过，认证服务器重新渲染了登录页，页面可能已改版")
+            if resp.status_code == 200:
+                raise LoginTransient(
+                    "登录未通过，认证服务器重新渲染了登录页，页面可能已改版")
+            # 4xx 但正文里读不出理由：认证服务器明确拒绝了，可我们不知道为什么。
+            # 归到 needs_human 而不是 LoginFailed —— **没有证据证明密码是错的**，
+            # 不该逼人先改密码才能恢复。两者都退 20、都立刻停机，
+            # 区别只在解锁方式：needs_human 用原密码就能解。
+            raise LoginNeedsHuman(
+                f"认证被拒绝（HTTP {resp.status_code}），"
+                "但页面上没有认得出的错误提示。"
+                "最常见的原因是密码错误，也可能是验证码或账号被临时锁定。"
+                "请去 https://ids.chd.edu.cn 手动登录一次确认。")
         resp.raise_for_status()
 
         final = self._follow(resp.headers.get("Location"))

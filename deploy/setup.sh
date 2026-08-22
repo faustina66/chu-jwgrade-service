@@ -142,6 +142,43 @@ else
   else
     echo "保持不变。"
   fi
+
+  # token 为空时必须重问。config.yaml 里 pushplus.enabled 默认是 true，
+  # 带着空 token 跑冒烟测试必然退 21，而上面那段只重问密码、token 原样保留——
+  # 于是重跑脚本永远修不好。2026-08-22 真机装机时撞进过这个死循环。
+  if ! sudo grep -qE '^PUSHPLUS_TOKEN=.+' "$ENV_FILE"; then
+    echo
+    echo "凭据文件里的 PushPlus token 是空的。"
+    read -rsp "PushPlus token（直接回车则关闭推送）: " PUSHPLUS_TOKEN; echo
+    ENV_KEEP="$(sudo grep -v '^PUSHPLUS_TOKEN=' "$ENV_FILE" || true)"
+    {
+      if [[ -n "$ENV_KEEP" ]]; then printf '%s\n' "$ENV_KEEP"; fi
+      printf 'PUSHPLUS_TOKEN=%s\n' "$PUSHPLUS_TOKEN"
+    } | sudo tee "$ENV_FILE" >/dev/null
+    sudo chmod 640 "$ENV_FILE"
+    sudo chown root:"$SVC_USER" "$ENV_FILE"
+  fi
+fi
+
+# 上面的提示写着「没有就直接回车跳过」，那就得让跳过真的能跑通：
+# 空 token + enabled: true 会让配置校验直接退 21，装机走不完。
+# config.example.yaml 里 enabled 只有 pushplus 这一处，缩进四格，所以能这么锚。
+if sudo grep -qE '^PUSHPLUS_TOKEN=.+' "$ENV_FILE"; then
+  if grep -qE '^    enabled: false' "${PROJECT_DIR}/config.yaml"; then
+    sudo sed -i 's/^    enabled: false/    enabled: true/' "${PROJECT_DIR}/config.yaml"
+    echo "检测到 PushPlus token，已把 notify.pushplus.enabled 设回 true。"
+  fi
+else
+  sudo sed -i 's/^    enabled: true/    enabled: false/' "${PROJECT_DIR}/config.yaml"
+  cat <<EOF
+
+没有 PushPlus token，已把 config.yaml 的 notify.pushplus.enabled 设为 false。
+监控照常运行，只是不会推送到微信。以后想开推送：
+  1) 把 PUSHPLUS_TOKEN=你的token 写进 ${ENV_FILE}
+  2) 把 config.yaml 里 pushplus 段的 enabled 改回 true
+  3) sudo systemctl restart ${SERVICE}
+或者直接重跑本脚本，它会问你要 token。
+EOF
 fi
 
 # ---------------------------------------------------------------- 服务
@@ -373,7 +410,9 @@ cat <<EOF
 
   sudo systemctl status ${SERVICE}                        查看状态
   sudo journalctl -u ${SERVICE} -f                        实时日志
-  sudo -u ${SVC_USER} ${VENV}/bin/python -m src.main --history 20   看变更历史
+  cd ${PROJECT_DIR} && sudo -u ${SVC_USER} .venv/bin/python -m src.main --history 20
+                                                          看变更历史
+  （cd 不能省：-m src.main 按当前目录找 src 包，sudo -u 不改工作目录）
 
 改轮询频率直接编辑 ${PROJECT_DIR}/config.yaml，保存即生效，不用重启。
 服务异常时先看 status 和 journal，不要反复 restart，以免重新触发认证。
