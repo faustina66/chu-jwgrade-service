@@ -8,20 +8,22 @@
 
 ## 推送效果
 
-### 微信通知列表
+成绩发生变化后，PushPlus 会先在微信中显示通知摘要。点击“查看详情”，可以通过服务号网页或 PushPlus 小程序查看完整成绩。
 
-成绩发生变化后，PushPlus 会在微信中显示通知摘要。点击“查看详情”即可打开完整内容。
+<table>
+  <tr>
+    <th align="center">微信通知列表</th>
+    <th align="center">服务号详情页</th>
+    <th align="center">小程序详情页</th>
+  </tr>
+  <tr>
+    <td width="33.33%" align="center" valign="top"><img src="docs/wechat-notification-list.jpg" alt="微信通知列表效果" width="100%"></td>
+    <td width="33.33%" align="center" valign="top"><img src="docs/pushplus-service-detail.jpg" alt="PushPlus 服务号详情页效果" width="100%"></td>
+    <td width="33.33%" align="center" valign="top"><img src="docs/pushplus-mini-program-detail.jpg" alt="PushPlus 小程序详情页效果" width="100%"></td>
+  </tr>
+</table>
 
-<p align="center">
-  <img src="docs/wechat-notification-list.jpg" alt="微信通知列表效果" width="360">
-</p>
-
-### 成绩详情
-
-![推送效果示例](docs/push-example.png)
-
-左侧是正常成绩通知，右侧是不及格成绩通知。异常分数、绩点和相关明细会标红显示。
-图中全部为虚构成绩，由 `tools/demo_push.py` 生成。
+三张图依次展示微信通知列表、服务号详情页和小程序详情页。服务号与小程序显示的是同一条成绩通知，界面排版由 PushPlus 客户端决定。图中课程和成绩均为虚构数据，由 `tools/demo_push.py` 生成，不包含真实个人信息。
 
 如果不需要完整明细，可以把 `notify.detail_level` 改为 `brief`。
 启用后只推送课程名称和最终成绩，PushPlus 也只会收到这两项内容。
