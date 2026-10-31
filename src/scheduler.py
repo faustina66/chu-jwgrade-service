@@ -14,6 +14,9 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
+# 轮询请求的硬下限。配置校验和实际调度必须共用这一安全边界。
+MIN_INTERVAL_SECONDS = 300
+
 ACTIVE, NORMAL, IDLE = "active", "normal", "idle"
 LABEL = {ACTIVE: "加速档", NORMAL: "常规档", IDLE: "省电档"}
 
@@ -86,8 +89,16 @@ class AdaptiveScheduler:
         }[self.mode]
 
     def next_delay(self) -> tuple[int, str]:
-        """返回 (等待秒数, 档位说明)。抖动是为了不打出固定节奏。"""
+        """返回 (等待秒数, 档位说明)，随机抖动不得突破最低轮询间隔。"""
         base = self.base_interval()
-        jitter = min(self.cfg.jitter, base // 3)   # 抖动不超过基础间隔的 1/3
+        # 抖动最多为基础间隔的 1/3，同时不能超过距离硬下限的余量。
+        # 这样既保留对称抖动，也保证最短实际等待时间不会低于 300 秒。
+        jitter = min(
+            self.cfg.jitter,
+            base // 3,
+            max(0, base - MIN_INTERVAL_SECONDS),
+        )
         delay = base + random.randint(-jitter, jitter) if jitter > 0 else base
-        return max(60, delay), LABEL[self.mode]
+        # 运行时再兜底一次：即使调用方绕过配置校验直接构造 ScheduleConfig，
+        # 也不能让调度器以低于安全下限的频率访问教务系统。
+        return max(MIN_INTERVAL_SECONDS, delay), LABEL[self.mode]
