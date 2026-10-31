@@ -9,7 +9,7 @@ from pathlib import Path
 import yaml
 
 from .adapters import available_names
-from .scheduler import ScheduleConfig
+from .scheduler import MIN_INTERVAL_SECONDS, ScheduleConfig
 
 log = logging.getLogger(__name__)
 
@@ -37,15 +37,8 @@ _KEYS = {
                  "heartbeat_path", "block_path", "rate_path", "session_path"},
 }
 
-# 三个轮询间隔的下限。低于 MIN 拒绝启动，低于 WARN 只记一条警告。
-#
-# 这是给"觉得 30 分钟太慢"的人准备的护栏。旧校验是 minimum=1，填 60 能过，
-# 然后每分钟访问一次教务系统。轮询确实不等于登录（会话能复用，登录闸另算），
-# 但每天上千次 GET 对一个学校系统仍然是很大的量。
-#
-# 300 秒是保守下限。修改代码常量的门槛高于误填配置值，
-# 可以降低因配置错误产生高频请求的风险。
-MIN_INTERVAL_SECONDS = 300
+# 最低轮询间隔由 scheduler 模块统一定义，配置校验与运行时执行共用同一常量。
+# 低于 MIN 拒绝启动，低于 WARN 只记一条警告。
 WARN_INTERVAL_SECONDS = 900
 _INTERVAL_KEYS = ("interval_seconds", "active_interval_seconds",
                   "idle_interval_seconds")
